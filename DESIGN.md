@@ -4,7 +4,7 @@
 
 The Mini App should feel like a quiet illustrated reading room: intimate and calm for end users, clear and measured for operators. Its reader is a six-panel, moonlit comic with a recurring lantern, riverside setting, and Haku companion. The comic framing is the public surface's visual signature. Admin surfaces use the same paper-and-forest palette with tighter spacing and tabular numbers.
 
-The source of truth for the current prototype tokens is the `:root` block in `haku.html`. It defines the paper, surface, ink, muted, line, green, plum, coral, gold, shadow, sans, and serif tokens. The interface supports `en`, `vi`, `zh`, `km`, and `th`, in that display order. Vietnamese uses self-hosted Fraunces and DM Sans coverage; Khmer and Thai use their Noto Sans families with system fallbacks. No separate generated token artifact exists yet.
+The source of truth for the current prototype tokens is the `:root` block in `haku.html`. It defines the paper, surface, ink, muted, line, green, plum, coral, gold, shadow, sans, and serif tokens. The interface supports `en`, `vi`, `zh`, `km`, and `th`, in that display order. Vietnamese uses Fraunces for titles and Be Vietnam Pro for body text; Khmer and Thai use their Noto Sans families with system fallbacks. No separate generated token artifact exists yet.
 
 ## Colors
 
@@ -29,7 +29,7 @@ The fallback dark palette follows the forest identity: page `#16231f`, surface `
 ## Typography
 
 - Display: Fraunces, reserved for headlines and the Haku mark.
-- Interface: DM Sans with Vietnamese coverage, plus Noto Sans Khmer and Noto Sans Thai ahead of generic sans fallbacks.
+- Interface: DM Sans by default, Be Vietnam Pro for Vietnamese, with Noto Sans Khmer and Noto Sans Thai ahead of generic sans fallbacks.
 - Data: interface sans with tabular numerals for IDs, rates, and counts.
 
 ## Layout

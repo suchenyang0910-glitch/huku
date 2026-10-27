@@ -2,6 +2,7 @@ import { access, readFile, readdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { brotliDecompressSync } from 'node:zlib';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const DIST = join(ROOT, 'dist');
@@ -47,6 +48,112 @@ function getAttr(tag, name) {
   return tag.match(new RegExp(`\\b${name}\\s*=\\s*(["'])(.*?)\\1`, 'i'))?.[2] ?? null;
 }
 
+const WOFF2_TAGS = [
+  'cmap', 'head', 'hhea', 'hmtx', 'maxp', 'name', 'OS/2', 'post', 'cvt ', 'fpgm', 'glyf', 'loca', 'prep', 'CFF ', 'VORG', 'EBDT',
+  'EBLC', 'gasp', 'hdmx', 'kern', 'LTSH', 'PCLT', 'VDMX', 'vhea', 'vmtx', 'BASE', 'GDEF', 'GPOS', 'GSUB', 'EBSC', 'JSTF', 'MATH',
+  'CBDT', 'CBLC', 'COLR', 'CPAL', 'SVG ', 'sbix', 'acnt', 'avar', 'bdat', 'bloc', 'bsln', 'cvar', 'fdsc', 'feat', 'fmtx', 'fvar',
+  'gvar', 'hsty', 'just', 'lcar', 'mort', 'morx', 'opbd', 'prop', 'trak', 'Zapf', 'Silf', 'Glat', 'Gloc', 'Feat', 'Sill'
+];
+
+function readUIntBase128(bytes, state, label) {
+  let value = 0;
+  for (let index = 0; index < 5; index++) {
+    if (state.offset >= bytes.length) throw new Error(`${label}: truncated UIntBase128`);
+    const byte = bytes[state.offset++];
+    if (index === 0 && byte === 0x80) throw new Error(`${label}: invalid UIntBase128 leading zero`);
+    if (value > 0x01ffffff) throw new Error(`${label}: UIntBase128 overflow`);
+    value = value * 128 + (byte & 0x7f);
+    if (!(byte & 0x80)) return value;
+  }
+  throw new Error(`${label}: UIntBase128 exceeds five bytes`);
+}
+
+function readWoff2Cmap(bytes, label) {
+  if (bytes.readUInt32BE(0) !== 0x774f4632) throw new Error(`${label}: not a WOFF2 file`);
+  const state = { offset: 48 };
+  const tables = [];
+  for (let index = 0; index < bytes.readUInt16BE(12); index++) {
+    const flags = bytes[state.offset++];
+    const tagIndex = flags & 0x3f;
+    let tag = WOFF2_TAGS[tagIndex];
+    if (tagIndex === 63) {
+      tag = bytes.subarray(state.offset, state.offset + 4).toString('ascii');
+      state.offset += 4;
+    }
+    const originalLength = readUIntBase128(bytes, state, label);
+    const transformVersion = flags >>> 6;
+    const transformed = tag === 'glyf' || tag === 'loca' ? transformVersion !== 3 : transformVersion !== 0;
+    const storedLength = transformed ? readUIntBase128(bytes, state, label) : originalLength;
+    tables.push({ tag, storedLength });
+  }
+  const compressedLength = bytes.readUInt32BE(20);
+  const data = brotliDecompressSync(bytes.subarray(state.offset, state.offset + compressedLength));
+  let dataOffset = 0;
+  let cmap;
+  for (const table of tables) {
+    if (dataOffset + table.storedLength > data.length) throw new Error(`${label}: table data exceeds decompressed WOFF2 data`);
+    if (table.tag === 'cmap') cmap = data.subarray(dataOffset, dataOffset + table.storedLength);
+    dataOffset += table.storedLength;
+  }
+  if (dataOffset !== data.length) throw new Error(`${label}: decompressed WOFF2 length does not match its table directory`);
+  if (!cmap) throw new Error(`${label}: cmap table is missing`);
+  return cmap;
+}
+
+function format4Has(cmap, offset, codePoint) {
+  if (codePoint > 0xffff) return false;
+  const length = cmap.readUInt16BE(offset + 2);
+  const segmentCount = cmap.readUInt16BE(offset + 6) / 2;
+  const endBase = offset + 14;
+  const startBase = endBase + segmentCount * 2 + 2;
+  const deltaBase = startBase + segmentCount * 2;
+  const rangeBase = deltaBase + segmentCount * 2;
+  for (let index = 0; index < segmentCount; index++) {
+    const end = cmap.readUInt16BE(endBase + index * 2);
+    if (codePoint > end) continue;
+    const start = cmap.readUInt16BE(startBase + index * 2);
+    if (codePoint < start) return false;
+    const delta = cmap.readInt16BE(deltaBase + index * 2);
+    const rangePosition = rangeBase + index * 2;
+    const rangeOffset = cmap.readUInt16BE(rangePosition);
+    if (!rangeOffset) return ((codePoint + delta) & 0xffff) !== 0;
+    const glyphPosition = rangePosition + rangeOffset + (codePoint - start) * 2;
+    if (glyphPosition + 2 > offset + length) return false;
+    const glyph = cmap.readUInt16BE(glyphPosition);
+    return glyph !== 0 && ((glyph + delta) & 0xffff) !== 0;
+  }
+  return false;
+}
+
+function format12Has(cmap, offset, codePoint) {
+  const groups = cmap.readUInt32BE(offset + 12);
+  for (let index = 0; index < groups; index++) {
+    const group = offset + 16 + index * 12;
+    const start = cmap.readUInt32BE(group);
+    if (codePoint < start) return false;
+    const end = cmap.readUInt32BE(group + 4);
+    if (codePoint <= end) return cmap.readUInt32BE(group + 8) + codePoint - start !== 0;
+  }
+  return false;
+}
+
+function cmapHas(cmap, codePoint) {
+  const seen = new Set();
+  for (let index = 0; index < cmap.readUInt16BE(2); index++) {
+    const record = 4 + index * 8;
+    const platform = cmap.readUInt16BE(record);
+    const encoding = cmap.readUInt16BE(record + 2);
+    if (platform !== 0 && !(platform === 3 && (encoding === 1 || encoding === 10))) continue;
+    const offset = cmap.readUInt32BE(record + 4);
+    if (seen.has(offset)) continue;
+    seen.add(offset);
+    const format = cmap.readUInt16BE(offset);
+    if (format === 4 && format4Has(cmap, offset, codePoint)) return true;
+    if (format === 12 && format12Has(cmap, offset, codePoint)) return true;
+  }
+  return false;
+}
+
 const files = await walk(DIST);
 const htmlFiles = files.filter((path) => path.endsWith('.html'));
 assert(htmlFiles.length === LOCALES.length * PAGES.length + 1, `expected ${LOCALES.length * PAGES.length + 1} HTML pages, found ${htmlFiles.length}`);
@@ -58,7 +165,7 @@ for (const route of expectedRoutes) {
   try { await access(target); assert(true, `route exists: ${route}`); }
   catch { assert(false, `route exists: ${route}`); }
 }
-for (const file of ['404.html', 'robots.txt', 'sitemap.xml', 'styles.css', 'assets/hero-900.webp', 'assets/hero-1672.webp', 'fonts/fraunces-vietnamese.woff2', 'fonts/dm-sans-vietnamese-400.woff2', 'fonts/dm-sans-vietnamese-600.woff2', 'fonts/dm-sans-vietnamese-700.woff2', 'fonts/noto-sans-khmer-600.woff2', 'fonts/noto-sans-thai-600.woff2', 'assets/og-image.jpg', 'assets/logo-96.webp', 'assets/favicon.png', 'assets/apple-touch-icon.png']) {
+for (const file of ['404.html', 'robots.txt', 'sitemap.xml', 'styles.css', 'assets/hero-900.webp', 'assets/hero-1672.webp', 'fonts/fraunces-vietnamese.woff2', 'fonts/be-vietnam-pro-vietnamese-400.woff2', 'fonts/be-vietnam-pro-latin-400.woff2', 'fonts/be-vietnam-pro-vietnamese-600.woff2', 'fonts/be-vietnam-pro-latin-600.woff2', 'fonts/be-vietnam-pro-vietnamese-700.woff2', 'fonts/be-vietnam-pro-latin-700.woff2', 'fonts/licenses/be-vietnam-pro-OFL.txt', 'fonts/noto-sans-khmer-600.woff2', 'fonts/noto-sans-thai-600.woff2', 'assets/og-image.jpg', 'assets/logo-96.webp', 'assets/favicon.png', 'assets/apple-touch-icon.png']) {
   try { await access(join(DIST, file)); assert(true, `required output exists: ${file}`); }
   catch { assert(false, `required output exists: ${file}`); }
 }
@@ -143,32 +250,38 @@ for (const match of css.matchAll(/url\(["']?([^"')]+)["']?\)/gi)) {
 }
 
 const fontHashes = {
+  'fraunces.woff2': '7f9d191d999336d3b9790afa72e1358e50a13b06d4f289341e92a311967a80f9',
   'fraunces-vietnamese.woff2': 'ce7b18aac7371cde4a740e54e252e9f02de67ff2ed444b18d1d04e66f50edeb0',
-  'dm-sans-vietnamese-400.woff2': '85f46c97652407c4d4b3bb337fc130e8be313a82b18ece1c86d54df37912f050',
-  'dm-sans-vietnamese-600.woff2': '85f46c97652407c4d4b3bb337fc130e8be313a82b18ece1c86d54df37912f050',
-  'dm-sans-vietnamese-700.woff2': '85f46c97652407c4d4b3bb337fc130e8be313a82b18ece1c86d54df37912f050'
+  'be-vietnam-pro-latin-400.woff2': '03d1b589cff172e1a670b3573e731d3380bc326f80cf83b0d3504e3188e2e074',
+  'be-vietnam-pro-latin-600.woff2': '9503dec2a7c532c8331e9600bcafea287a4fd208573b8668d85ab8d8de1863c7',
+  'be-vietnam-pro-latin-700.woff2': 'a193dd87699bd2e18ddf72dc271493ea82a23dad9f5c334d9f2a257b1e05fc30',
+  'be-vietnam-pro-vietnamese-400.woff2': 'dc085e2fba3414e5c5bf1e6172f921a9f81c5859946a4ed3d63c1e470d96a9e2',
+  'be-vietnam-pro-vietnamese-600.woff2': '97658c6f9a384f29a3005c3d96e2a0d1c810192cf68979071c290f5a377a9f99',
+  'be-vietnam-pro-vietnamese-700.woff2': '4f58af2d1c3e28a9ba14c51c82db2751d78344b75bdcb34de24a1031ebe59da6'
 };
 for (const [name, expected] of Object.entries(fontHashes)) {
   const bytes = await readFile(join(DIST, 'fonts', name));
   assert(createHash('sha256').update(bytes).digest('hex') === expected, `${name} matches its pinned release asset`);
 }
 
-const latin = [[0x0000, 0x00ff], [0x0131, 0x0131], [0x0152, 0x0153], [0x02bb, 0x02bc], [0x02c6, 0x02c6], [0x02da, 0x02dc], [0x0304, 0x0304], [0x0308, 0x0308], [0x0329, 0x0329], [0x2000, 0x206f]];
-const frauncesVietnamese = [[0x0102, 0x0103], [0x0110, 0x0111], [0x0128, 0x0129], [0x0168, 0x0169], [0x01a0, 0x01a1], [0x01af, 0x01b0], [0x0300, 0x0301], [0x0303, 0x0304], [0x0308, 0x0309], [0x0323, 0x0323], [0x0329, 0x0329], [0x1ea0, 0x1ef9]];
-const dmSansVietnamese = [[0x0102, 0x0103], [0x0110, 0x0111], [0x0128, 0x0129], [0x0168, 0x0169], [0x01a0, 0x01a1], [0x01af, 0x01b0], [0x0300, 0x0303], [0x0306, 0x0306], [0x0309, 0x0309], [0x031b, 0x031b], [0x0323, 0x0323], [0x1ea0, 0x1ef9]];
-const covered = (char, ranges) => ranges.some(([start, end]) => char.codePointAt(0) >= start && char.codePointAt(0) <= end);
 const requiredVietnamese = 'ạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹđơư';
-for (const char of new Set(requiredVietnamese + requiredVietnamese.toLocaleUpperCase('vi'))) {
-  assert(covered(char, frauncesVietnamese), `Fraunces Vietnamese subset covers ${char}`);
-  assert(covered(char, dmSansVietnamese), `DM Sans Vietnamese subset covers ${char}`);
-}
 const viCopy = JSON.parse(await readFile(join(ROOT, 'locales', 'vi.json'), 'utf8'));
-const viLetters = new Set([...Object.values(viCopy).join(' ').normalize('NFC')].filter((char) => /\p{Letter}/u.test(char)));
-for (const char of viLetters) {
-  assert(covered(char, [...latin, ...frauncesVietnamese]), `Fraunces self-hosted files cover Vietnamese page character ${char}`);
-  assert(covered(char, [...latin, ...dmSansVietnamese]), `DM Sans self-hosted files cover Vietnamese page character ${char}`);
+const viPageCopy = Object.entries(viCopy).map(([key, value]) => key === 'privacyLink' ? value.replace(/\s*→\s*$/, '') : value).join('');
+const viCharacters = new Set([...(viPageCopy + requiredVietnamese + requiredVietnamese.toLocaleUpperCase('vi')).normalize('NFC')].filter((char) => !/\s/u.test(char)));
+const fontCmaps = Object.fromEntries(await Promise.all(Object.keys(fontHashes).map(async (name) => [name, readWoff2Cmap(await readFile(join(DIST, 'fonts', name)), name)])));
+for (const char of viCharacters) {
+  const codePoint = char.codePointAt(0);
+  assert(cmapHas(fontCmaps['fraunces.woff2'], codePoint) || cmapHas(fontCmaps['fraunces-vietnamese.woff2'], codePoint), `Fraunces cmap covers Vietnamese page character ${char}`);
+  for (const weight of [400, 600, 700]) {
+    assert(cmapHas(fontCmaps[`be-vietnam-pro-latin-${weight}.woff2`], codePoint) || cmapHas(fontCmaps[`be-vietnam-pro-vietnamese-${weight}.woff2`], codePoint), `Be Vietnam Pro ${weight} cmap covers Vietnamese page character ${char}`);
+  }
 }
-assert(css.includes('/fonts/fraunces-vietnamese.woff2') && css.includes('/fonts/dm-sans-vietnamese-400.woff2') && css.includes('/fonts/dm-sans-vietnamese-600.woff2') && css.includes('/fonts/dm-sans-vietnamese-700.woff2'), 'Vietnamese font subsets are loaded from self-hosted files');
+for (const weight of [400, 600, 700]) for (const subset of ['vietnamese', 'latin']) {
+  assert(new RegExp(`font-family:BeVietnamPro;src:url\\("/fonts/be-vietnam-pro-${subset}-${weight}\\.woff2"\\)[^}]*font-weight:${weight}[^}]*unicode-range:`, 'i').test(css), `Be Vietnam Pro ${subset} ${weight} face has a selectable weight and unicode range`);
+}
+assert(css.includes('/fonts/fraunces-vietnamese.woff2') && css.includes(':lang(vi){--sans:BeVietnamPro'), 'Vietnamese pages use self-hosted Fraunces titles and Be Vietnam Pro body text');
+assert(!css.includes('dm-sans-vietnamese'), 'removed fake DM Sans Vietnamese faces are not referenced');
+assert(!(await readFile(join(DIST, 'vi', 'index.html'), 'utf8')).includes('→'), 'decorative privacy arrow is SVG, not a fallback font glyph');
 const tokens = Object.fromEntries([...css.matchAll(/--([a-z-]+)\s*:\s*(#[0-9a-f]{6})/gi)].map((match) => [match[1], match[2]]));
 function luminance(hex) {
   const c = hex.slice(1).match(/../g).map((v) => parseInt(v, 16) / 255).map((v) => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4);
