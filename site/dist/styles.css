@@ -2,6 +2,8 @@
 @font-face{font-family:DMSans;src:url("/fonts/dm-sans.woff2") format("woff2");font-style:normal;font-weight:100 1000;font-display:swap}
 @font-face{font-family:NotoKhmer;src:url("/fonts/noto-sans-khmer.woff2") format("woff2");font-style:normal;font-weight:400;font-display:swap;unicode-range:U+1780-17FF,U+19E0-19FF,U+200C-200D,U+25CC}
 @font-face{font-family:NotoThai;src:url("/fonts/noto-sans-thai.woff2") format("woff2");font-style:normal;font-weight:400;font-display:swap;unicode-range:U+0E00-0E7F}
+@font-face{font-family:NotoKhmer;src:url("/fonts/noto-sans-khmer-600.woff2") format("woff2");font-style:normal;font-weight:600 700;font-display:swap;unicode-range:U+1780-17FF,U+19E0-19FF,U+200C-200D,U+25CC}
+@font-face{font-family:NotoThai;src:url("/fonts/noto-sans-thai-600.woff2") format("woff2");font-style:normal;font-weight:600 700;font-display:swap;unicode-range:U+0E00-0E7F}
 :root{color-scheme:light;--paper:#f6f3e9;--surface:#fffdf8;--ink:#172b25;--muted:#4b5851;--line:#ddd9cd;--forest:#315b4c;--forest-deep:#1d4337;--forest-soft:#e4ebe1;--gold:#e8c983;--serif:Fraunces,Georgia,"Times New Roman",serif;--sans:DMSans,NotoKhmer,NotoThai,Arial,sans-serif;--shadow:0 16px 48px #1d332412;--focus:#9c543b}
 *{box-sizing:border-box}
 html{scroll-behavior:smooth;scroll-padding-top:24px}
@@ -82,8 +84,10 @@ h1,h2,h3,p{margin-top:0}
 .not-found{min-height:50vh;display:grid;align-content:center;justify-items:start}
 .not-found .button{margin-top:8px}
 html[lang=km] body,html[lang=th] body{line-height:1.9}
-html[lang=km] .hero h1,html[lang=th] .hero h1{line-height:1.28;letter-spacing:-.025em;overflow-wrap:break-word}
-html[lang=km] .page-main h1,html[lang=th] .page-main h1{line-height:1.35;letter-spacing:-.02em;overflow-wrap:break-word}
+html[lang=km] .hero h1,html[lang=th] .hero h1{line-height:1.28;letter-spacing:0;overflow-wrap:break-word}
+html[lang=km] .page-main h1,html[lang=th] .page-main h1{line-height:1.35;letter-spacing:0;overflow-wrap:break-word}
+/* Tracking splits Khmer and Thai vowel and tone marks from their base letters. */
+html[lang=km] :is(.eyebrow,h2,h3),html[lang=th] :is(.eyebrow,h2,h3){letter-spacing:0}
 html[lang=km] .step h3,html[lang=th] .step h3{line-height:1.45}
 @media(max-width:1100px){.hero{grid-template-columns:minmax(300px,.78fr) minmax(0,1.22fr);gap:34px}.step{grid-template-columns:42px 38px minmax(0,1fr);gap:11px;padding:10px 14px}.step-number{width:40px;height:40px}.step-icon{width:36px;height:36px}}
 @media(max-width:900px){.site-header{padding:16px 24px}.top-nav>a:not(.button){display:none}.hero{grid-template-columns:1fr;gap:22px;padding-top:10px}.hero-copy{max-width:700px}.hero h1{max-width:660px;font-size:clamp(44px,8vw,66px)}.hero-description{max-width:600px}.hero-art{order:2}.botanical-hero{display:none}.steps-section{padding-top:34px}.steps{grid-template-columns:1fr;max-width:680px;margin:0 auto;text-align:left}.step{min-height:88px;grid-template-columns:48px 44px minmax(0,1fr);padding:12px 10px;border-right:0;border-bottom:1px solid var(--line)}.step:last-child{border-bottom:0}.step p{max-width:none}.privacy-band{grid-template-columns:72px minmax(0,1fr);gap:18px;padding:20px 24px}.privacy-logo{width:66px;height:66px}.privacy-link{grid-column:2;white-space:normal}.privacy-band .botanical{display:none}}

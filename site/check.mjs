@@ -57,7 +57,7 @@ for (const route of expectedRoutes) {
   try { await access(target); assert(true, `route exists: ${route}`); }
   catch { assert(false, `route exists: ${route}`); }
 }
-for (const file of ['404.html', 'robots.txt', 'sitemap.xml', 'styles.css', 'assets/hero-900.webp', 'assets/hero-1800.webp', 'assets/og-image.jpg', 'assets/logo-96.webp', 'assets/favicon.png', 'assets/apple-touch-icon.png']) {
+for (const file of ['404.html', 'robots.txt', 'sitemap.xml', 'styles.css', 'assets/hero-900.webp', 'assets/hero-1672.webp', 'fonts/noto-sans-khmer-600.woff2', 'fonts/noto-sans-thai-600.woff2', 'assets/og-image.jpg', 'assets/logo-96.webp', 'assets/favicon.png', 'assets/apple-touch-icon.png']) {
   try { await access(join(DIST, file)); assert(true, `required output exists: ${file}`); }
   catch { assert(false, `required output exists: ${file}`); }
 }
