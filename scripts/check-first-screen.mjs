@@ -186,6 +186,44 @@ try {
   assert.match(await dateScenario.page.locator('#answer-date').textContent(), /1990.*5.*15/, 'Confirm displays the localized 1990-05-15 date');
   await dateScenario.page.screenshot({ path: path.join(screenshotDir, 'task-15-date-wheel-selected.png') });
   assert.equal(await dateScenario.page.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0, 'date question does not scroll horizontally');
+
+  await dateScenario.page.click('#answer-date');
+  await dateScenario.page.evaluate(() => new Promise(resolve => {
+    const year = document.querySelector('#date-year-wheel');
+    const month = document.querySelector('#date-month-wheel');
+    window.__dateMonthFirstOption = month.firstElementChild;
+    year.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1 }));
+    year.scrollTop = (1991 - 1930) * 44;
+    setTimeout(() => {
+      month.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 2 }));
+      month.scrollTop = (8 - 1) * 44;
+    }, 50);
+    setTimeout(() => year.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 })), 100);
+    setTimeout(() => {
+      month.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 2 }));
+      resolve();
+    }, 150);
+  }));
+  await dateScenario.page.waitForTimeout(220);
+  const fastWheelResult = await dateScenario.page.evaluate(() => {
+    const month = document.querySelector('#date-month-wheel');
+    const centered = month.children[Math.round(month.scrollTop / 44)];
+    return {
+      month: Number(centered.dataset.value),
+      selected: document.querySelector('#date-month-8').getAttribute('aria-selected'),
+      sameNode: window.__dateMonthFirstOption === month.firstElementChild
+    };
+  });
+  assert.deepEqual(fastWheelResult, { month: 8, selected: 'true', sameNode: true }, 'settling the year does not redraw or reset an active month wheel');
+  await dateScenario.page.click('#date-confirm');
+  assert.match(await dateScenario.page.locator('#answer-date').textContent(), /1991.*8.*15/, 'fast cross-wheel scrolling confirms the visible August value');
+
+  await dateScenario.page.click('#answer-date');
+  await dateScenario.page.evaluate(() => {
+    document.querySelector('#date-month-wheel').scrollTop = (11 - 1) * 44;
+    document.querySelector('#date-confirm').click();
+  });
+  assert.match(await dateScenario.page.locator('#answer-date').textContent(), /1991.*11.*15/, 'immediate Confirm settles the visible wheel values before committing');
   assert.deepEqual(dateScenario.errors, []);
   await dateScenario.context.close();
 
