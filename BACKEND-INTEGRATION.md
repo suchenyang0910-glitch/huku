@@ -32,6 +32,7 @@ Returns only records the current staff role may view:
 {
   "metrics": { "totalUsers": 1284, "newUsers7d": 96, "consentRate": 91 },
   "dailyNewUsers": [14, 20, 17, 29, 22, 38, 31],
+  "dailyDates": ["2026-10-21", "2026-10-22", "2026-10-23", "2026-10-24", "2026-10-25", "2026-10-26", "2026-10-27"],
   "users": [
     { "id": "1082457361", "bot": "Haku Main", "locale": "en", "date": "2026-10-27", "consent": true }
   ],
@@ -42,7 +43,7 @@ Returns only records the current staff role may view:
 }
 ```
 
-`dailyNewUsers` contains seven values ordered to match the active locale's weekday labels. Paginate the user list in production when the account volume requires it; the prototype currently renders the returned page and filters it locally by Telegram ID.
+`dailyNewUsers` contains seven counts for the rolling seven days ending today, oldest first. `dailyDates` holds the matching UTC dates (`YYYY-MM-DD`); the client derives each bar's weekday label from these dates. Paginate the user list in production when the account volume requires it; the prototype currently renders the returned page and filters it locally by Telegram ID.
 
 ### Bot status configuration
 

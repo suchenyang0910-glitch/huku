@@ -235,8 +235,10 @@ function overview() {
   const consentRate = totalUsers ? Math.round(consentedUsers / totalUsers * 100) : 0;
   const daily = new Map(db.prepare("SELECT substr(first_seen, 1, 10) AS day, COUNT(*) AS n FROM users WHERE first_seen >= ? GROUP BY day").all(cutoff).map((row) => [row.day, Number(row.n)]));
   const dailyNewUsers = [];
+  const dailyDates = [];
   for (let offset = 6; offset >= 0; offset--) {
     const date = new Date(now.getTime() - offset * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    dailyDates.push(date);
     dailyNewUsers.push(daily.get(date) || 0);
   }
   const userRows = db.prepare('SELECT telegram_id, locale, source_bot_id, first_seen, consent_at FROM users ORDER BY first_seen DESC LIMIT 200').all();
@@ -251,6 +253,7 @@ function overview() {
   return {
     metrics: { totalUsers, newUsers7d, consentRate },
     dailyNewUsers,
+    dailyDates,
     users,
     bots: bots.map(({ id, name, handle, role, active }) => ({ id, name, handle, role, active })),
     csrfToken: null
