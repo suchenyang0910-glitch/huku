@@ -14,7 +14,9 @@ The Bot configuration is server-only. Each Telegram `initData` signature is chec
 
 ## What gets saved
 
-Telegram IDs are saved only after the user agrees and the server accepts `POST /api/telegram/consent`. The account record contains Telegram ID, locale, source Bot ID, first/last-seen timestamps, consent time, and consent version. `last_seen` is refreshed when a saved user is verified again. Records are deleted when `last_seen` is older than `HAKU_RETENTION_DAYS` (default: 365 days); cleanup runs at startup and every 24 hours. Users can download a JSON copy or delete their saved account from the Telegram account card. Birth details, relationship answers, manga feedback, Telegram names, and usernames are not saved.
+The Save account checkbox is selected by default, but opening the page and completing Telegram verification do not create a durable record. The client calls `POST /api/telegram/consent` only when the user clicks Continue with Telegram while that checkbox remains selected. Clearing it before continuing prevents the save. The account record contains Telegram ID, locale, source Bot ID, first/last-seen timestamps, consent time, and consent version. `last_seen` is refreshed when a saved user is verified again. Records are deleted when `last_seen` is older than `HAKU_RETENTION_DAYS` (default: 365 days); cleanup runs at startup and every 24 hours. Users can download a JSON copy or delete their saved account from My account (`#/me`). Birth details, relationship answers, manga feedback, Telegram names, and usernames are not saved.
+
+Production uses consent version `2026-10-28-v2-default-checked` because the default selection and its explanatory copy changed. Existing records keep their original consent version and are not rewritten.
 
 The admin route uses named `owner` and `viewer` accounts. Only owners can perform write operations; viewers can read the overview. Create accounts with `node server.mjs create-admin <username> <owner|viewer>`.
 
@@ -130,7 +132,7 @@ docker compose -f deploy/compose.yml up -d --force-recreate
 docker compose -f deploy/compose.yml ps
 ~~~
 
-After the upgraded service is healthy, run `node scripts/set-webhook.mjs` once in the Haku container to publish the Vietnamese Bot profile copy.
+After the upgraded service is healthy, publish the regenerated `site/dist` directory through the existing website release process. Run `node scripts/set-webhook.mjs` only when Bot profile copy has also changed.
 
 After health and both domains are verified, retain the previous image or commit until the rollback window closes. To roll back, check out the previous known-good commit (placeholder: <PREVIOUS_COMMIT>), rebuild, recreate Haku with the same data directory, and verify health. Do not run two containers against the same SQLite file.
 
@@ -142,5 +144,6 @@ After health and both domains are verified, retain the previous image or commit 
 - Put the server behind HTTPS before production and set `NODE_ENV=production` so session cookies are marked `Secure`.
 - If the server sits behind a reverse proxy, set `HAKU_TRUSTED_PROXY=true` only when direct access to the Node port is blocked and the proxy overwrites/appends `X-Forwarded-For` correctly. Otherwise the login rate limiter will key off the proxy address.
 - `node:sqlite` is still marked release-candidate in the Node 25 documentation. Pin and qualify the runtime before production upgrades.
-- `HAKU_RETENTION_DAYS` defaults to 365. It controls automatic cleanup based on `last_seen`; users can also export or delete their account from the account card.
+- `HAKU_CONSENT_VERSION` is set to `2026-10-28-v2-default-checked` in the production Compose file. Keep it stable for this wording/default behavior; changing it labels only future saves.
+- `HAKU_RETENTION_DAYS` defaults to 365. It controls automatic cleanup based on `last_seen`; users can also export or delete their account from My account.
 - `HAKU_STATS_TIMEZONE` defaults to `Asia/Phnom_Penh`. Overview counts and `dailyDates` use seven natural days in this timezone; stored `first_seen` values remain UTC ISO timestamps. Set another valid IANA timezone when the admin dashboard should report a different local calendar.

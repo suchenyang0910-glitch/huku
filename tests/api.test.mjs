@@ -174,6 +174,8 @@ try {
 
   const userSession = await createUserSession(userId);
   assert.match(userSession.cookie, /^haku_session=/, 'Telegram session uses the user cookie name');
+  assert.equal((await request('/api/telegram/account', { cookie: userSession.cookie })).status, 404,
+    'successful Telegram verification does not create a saved account');
   assert.equal((await request('/api/telegram/account/delete', {
     method: 'POST', cookie: userSession.cookie
   })).status, 403, 'delete without CSRF returns 403');

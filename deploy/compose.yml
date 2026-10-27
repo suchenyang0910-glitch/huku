@@ -19,5 +19,6 @@ services:
       HAKU_ALLOWED_ORIGINS: https://mini.truesignal.cc
       HAKU_TRUSTED_PROXY: "true"
       HAKU_DB_PATH: /var/lib/haku/haku.sqlite
+      HAKU_CONSENT_VERSION: 2026-10-28-v2-default-checked
     volumes:
       - /var/lib/haku:/var/lib/haku
