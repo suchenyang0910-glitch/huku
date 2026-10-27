@@ -11,7 +11,9 @@ services:
     environment:
       NODE_ENV: production
       HOST: 127.0.0.1
-      PORT: "4173"
+      # 4173 is already used on the production host by oa-system-employee_web.
+      # If you change this port, also change the reverse proxy target.
+      PORT: "4183"
       HAKU_PUBLIC_ORIGIN: https://mini.truesignal.cc
       HAKU_ALLOWED_ORIGINS: https://mini.truesignal.cc
       HAKU_TRUSTED_PROXY: "true"
