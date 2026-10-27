@@ -6,6 +6,13 @@ export const BOT_COPY = {
     welcome: "Welcome. I'm Haku 🌙\n\nWhen the city goes quiet, I keep a lantern lit by the river for anyone carrying a question.\n\nAnswer five short questions and I'll turn them into a six-page story made for you. It takes about three minutes.\n\nTap the button below to begin.",
     button: 'Open Haku'
   },
+  vi: {
+    name: 'Haku · Chuyện dưới trăng',
+    shortDescription: 'Một khoảng đọc yên tĩnh dưới trăng, được viết từ câu trả lời của bạn. Sáu trang ngắn để tự nhìn lại.',
+    description: 'Haku hỏi bạn vài câu nhẹ nhàng — ngày sinh, điều đang ở trong lòng và cảm giác ấy đã ở lại bao lâu — rồi viết thành một câu chuyện minh họa ngắn, từng trang một.\n\nChạm “Mở Haku” để bắt đầu. Câu trả lời chỉ ở trong lượt đọc này; tài khoản Telegram chỉ được lưu khi bạn đồng ý.\n\nDành cho tự suy ngẫm và giải trí, không phải lời khuyên y tế, tài chính hay pháp lý.',
+    welcome: 'Xin chào, mình là Haku 🌙\n\nKhi thành phố lắng xuống, mình thắp một chiếc đèn bên sông để chờ những ai đang mang theo một điều khó nói.\n\nHãy trả lời năm câu hỏi ngắn. Mình sẽ viết chúng thành một câu chuyện sáu trang dành riêng cho bạn, mất khoảng ba phút.\n\nChạm nút bên dưới để bắt đầu nhé.',
+    button: 'Mở Haku'
+  },
   zh: {
     name: 'Haku · 月下故事',
     shortDescription: '根据你的回答，写一段安静的月下阅读。六页小故事，一个真实的问题。仅供自我反思。',
@@ -28,3 +35,9 @@ export const BOT_COPY = {
     button: 'បើក Haku'
   }
 };
+
+for (const [locale, copy] of Object.entries(BOT_COPY)) {
+  if (copy.name.length > 64) throw new Error(`BOT_COPY.${locale}.name exceeds 64 characters`);
+  if (copy.shortDescription.length > 120) throw new Error(`BOT_COPY.${locale}.shortDescription exceeds 120 characters`);
+  if (copy.description.length > 512) throw new Error(`BOT_COPY.${locale}.description exceeds 512 characters`);
+}

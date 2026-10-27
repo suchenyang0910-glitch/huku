@@ -84,17 +84,20 @@ for (const bot of activeBots) {
     ['setWebhook', { url, secret_token: webhookSecret(bot.id), allowed_updates: ['message'] }, url],
     ['setChatMenuButton', { menu_button: { type: 'web_app', text: BOT_COPY.en.button, web_app: { url: publicOrigin } } }],
     ['setMyName', { name: BOT_COPY.en.name }],
+    ['setMyName[vi]', { name: BOT_COPY.vi.name, language_code: 'vi' }, null, 'setMyName'],
     ['setMyName[zh]', { name: BOT_COPY.zh.name, language_code: 'zh' }, null, 'setMyName'],
-    ['setMyName[th]', { name: BOT_COPY.th.name, language_code: 'th' }, null, 'setMyName'],
     ['setMyName[km]', { name: BOT_COPY.km.name, language_code: 'km' }, null, 'setMyName'],
+    ['setMyName[th]', { name: BOT_COPY.th.name, language_code: 'th' }, null, 'setMyName'],
     ['setMyShortDescription', { short_description: BOT_COPY.en.shortDescription }],
+    ['setMyShortDescription[vi]', { short_description: BOT_COPY.vi.shortDescription, language_code: 'vi' }, null, 'setMyShortDescription'],
     ['setMyShortDescription[zh]', { short_description: BOT_COPY.zh.shortDescription, language_code: 'zh' }, null, 'setMyShortDescription'],
-    ['setMyShortDescription[th]', { short_description: BOT_COPY.th.shortDescription, language_code: 'th' }, null, 'setMyShortDescription'],
     ['setMyShortDescription[km]', { short_description: BOT_COPY.km.shortDescription, language_code: 'km' }, null, 'setMyShortDescription'],
+    ['setMyShortDescription[th]', { short_description: BOT_COPY.th.shortDescription, language_code: 'th' }, null, 'setMyShortDescription'],
     ['setMyDescription', { description: BOT_COPY.en.description }],
+    ['setMyDescription[vi]', { description: BOT_COPY.vi.description, language_code: 'vi' }, null, 'setMyDescription'],
     ['setMyDescription[zh]', { description: BOT_COPY.zh.description, language_code: 'zh' }, null, 'setMyDescription'],
-    ['setMyDescription[th]', { description: BOT_COPY.th.description, language_code: 'th' }, null, 'setMyDescription'],
-    ['setMyDescription[km]', { description: BOT_COPY.km.description, language_code: 'km' }, null, 'setMyDescription']
+    ['setMyDescription[km]', { description: BOT_COPY.km.description, language_code: 'km' }, null, 'setMyDescription'],
+    ['setMyDescription[th]', { description: BOT_COPY.th.description, language_code: 'th' }, null, 'setMyDescription']
   ];
 
   for (const [label, payload, displayUrl, methodOverride] of actions) {

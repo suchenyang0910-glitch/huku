@@ -1,11 +1,12 @@
 import { access, readFile, readdir } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const DIST = join(ROOT, 'dist');
 const ORIGIN = 'https://truesignal.cc';
-const LOCALES = ['en', 'km', 'th', 'zh'];
+const LOCALES = ['en', 'vi', 'zh', 'km', 'th'];
 const PAGES = ['home', 'privacy', 'terms'];
 let failures = 0;
 let assertions = 0;
@@ -48,7 +49,7 @@ function getAttr(tag, name) {
 
 const files = await walk(DIST);
 const htmlFiles = files.filter((path) => path.endsWith('.html'));
-assert(htmlFiles.length === LOCALES.length * PAGES.length + 1, `expected 13 HTML pages, found ${htmlFiles.length}`);
+assert(htmlFiles.length === LOCALES.length * PAGES.length + 1, `expected ${LOCALES.length * PAGES.length + 1} HTML pages, found ${htmlFiles.length}`);
 
 const expectedRoutes = [];
 for (const locale of LOCALES) for (const page of PAGES) expectedRoutes.push(routeFor(locale, page));
@@ -57,7 +58,7 @@ for (const route of expectedRoutes) {
   try { await access(target); assert(true, `route exists: ${route}`); }
   catch { assert(false, `route exists: ${route}`); }
 }
-for (const file of ['404.html', 'robots.txt', 'sitemap.xml', 'styles.css', 'assets/hero-900.webp', 'assets/hero-1672.webp', 'fonts/noto-sans-khmer-600.woff2', 'fonts/noto-sans-thai-600.woff2', 'assets/og-image.jpg', 'assets/logo-96.webp', 'assets/favicon.png', 'assets/apple-touch-icon.png']) {
+for (const file of ['404.html', 'robots.txt', 'sitemap.xml', 'styles.css', 'assets/hero-900.webp', 'assets/hero-1672.webp', 'fonts/fraunces-vietnamese.woff2', 'fonts/dm-sans-vietnamese-400.woff2', 'fonts/dm-sans-vietnamese-600.woff2', 'fonts/dm-sans-vietnamese-700.woff2', 'fonts/noto-sans-khmer-600.woff2', 'fonts/noto-sans-thai-600.woff2', 'assets/og-image.jpg', 'assets/logo-96.webp', 'assets/favicon.png', 'assets/apple-touch-icon.png']) {
   try { await access(join(DIST, file)); assert(true, `required output exists: ${file}`); }
   catch { assert(false, `required output exists: ${file}`); }
 }
@@ -67,7 +68,7 @@ for (const file of htmlFiles) {
   const html = await readFile(file, 'utf8');
   const label = relative(DIST, file).replaceAll(sep, '/') || 'index.html';
   const lang = html.match(/<html\b[^>]*\blang="([^"]+)"/i)?.[1];
-  assert(['en', 'km', 'th', 'zh'].includes(lang), `${label} has a supported html lang`);
+  assert(LOCALES.includes(lang), `${label} has a supported html lang`);
   assert(/<title>[^<]+<\/title>/i.test(html), `${label} has a title`);
   assert(/<meta\s+name="description"\s+content="[^"]+"/i.test(html), `${label} has a meta description`);
   assert(/<link\s+rel="canonical"\s+href="https:\/\/truesignal\.cc\//i.test(html), `${label} has a self canonical URL`);
@@ -140,6 +141,34 @@ for (const match of css.matchAll(/url\(["']?([^"')]+)["']?\)/gi)) {
   try { await access(target); assert(true, `CSS resource exists: ${value}`); }
   catch { assert(false, `CSS resource exists: ${value}`); }
 }
+
+const fontHashes = {
+  'fraunces-vietnamese.woff2': 'ce7b18aac7371cde4a740e54e252e9f02de67ff2ed444b18d1d04e66f50edeb0',
+  'dm-sans-vietnamese-400.woff2': '85f46c97652407c4d4b3bb337fc130e8be313a82b18ece1c86d54df37912f050',
+  'dm-sans-vietnamese-600.woff2': '85f46c97652407c4d4b3bb337fc130e8be313a82b18ece1c86d54df37912f050',
+  'dm-sans-vietnamese-700.woff2': '85f46c97652407c4d4b3bb337fc130e8be313a82b18ece1c86d54df37912f050'
+};
+for (const [name, expected] of Object.entries(fontHashes)) {
+  const bytes = await readFile(join(DIST, 'fonts', name));
+  assert(createHash('sha256').update(bytes).digest('hex') === expected, `${name} matches its pinned release asset`);
+}
+
+const latin = [[0x0000, 0x00ff], [0x0131, 0x0131], [0x0152, 0x0153], [0x02bb, 0x02bc], [0x02c6, 0x02c6], [0x02da, 0x02dc], [0x0304, 0x0304], [0x0308, 0x0308], [0x0329, 0x0329], [0x2000, 0x206f]];
+const frauncesVietnamese = [[0x0102, 0x0103], [0x0110, 0x0111], [0x0128, 0x0129], [0x0168, 0x0169], [0x01a0, 0x01a1], [0x01af, 0x01b0], [0x0300, 0x0301], [0x0303, 0x0304], [0x0308, 0x0309], [0x0323, 0x0323], [0x0329, 0x0329], [0x1ea0, 0x1ef9]];
+const dmSansVietnamese = [[0x0102, 0x0103], [0x0110, 0x0111], [0x0128, 0x0129], [0x0168, 0x0169], [0x01a0, 0x01a1], [0x01af, 0x01b0], [0x0300, 0x0303], [0x0306, 0x0306], [0x0309, 0x0309], [0x031b, 0x031b], [0x0323, 0x0323], [0x1ea0, 0x1ef9]];
+const covered = (char, ranges) => ranges.some(([start, end]) => char.codePointAt(0) >= start && char.codePointAt(0) <= end);
+const requiredVietnamese = 'ạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹđơư';
+for (const char of new Set(requiredVietnamese + requiredVietnamese.toLocaleUpperCase('vi'))) {
+  assert(covered(char, frauncesVietnamese), `Fraunces Vietnamese subset covers ${char}`);
+  assert(covered(char, dmSansVietnamese), `DM Sans Vietnamese subset covers ${char}`);
+}
+const viCopy = JSON.parse(await readFile(join(ROOT, 'locales', 'vi.json'), 'utf8'));
+const viLetters = new Set([...Object.values(viCopy).join(' ').normalize('NFC')].filter((char) => /\p{Letter}/u.test(char)));
+for (const char of viLetters) {
+  assert(covered(char, [...latin, ...frauncesVietnamese]), `Fraunces self-hosted files cover Vietnamese page character ${char}`);
+  assert(covered(char, [...latin, ...dmSansVietnamese]), `DM Sans self-hosted files cover Vietnamese page character ${char}`);
+}
+assert(css.includes('/fonts/fraunces-vietnamese.woff2') && css.includes('/fonts/dm-sans-vietnamese-400.woff2') && css.includes('/fonts/dm-sans-vietnamese-600.woff2') && css.includes('/fonts/dm-sans-vietnamese-700.woff2'), 'Vietnamese font subsets are loaded from self-hosted files');
 const tokens = Object.fromEntries([...css.matchAll(/--([a-z-]+)\s*:\s*(#[0-9a-f]{6})/gi)].map((match) => [match[1], match[2]]));
 function luminance(hex) {
   const c = hex.slice(1).match(/../g).map((v) => parseInt(v, 16) / 255).map((v) => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4);
