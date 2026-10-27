@@ -16,7 +16,12 @@ The Bot configuration is server-only. Each Telegram `initData` signature is chec
 
 Telegram IDs are persisted only after the user checks the account-consent box and the server accepts `POST /api/telegram/consent`. The SQLite record stores Telegram ID, locale, source Bot ID, first/last-seen time, and consent time/version. Birth details, relationship answers, manga feedback, Telegram names, and usernames are not stored by this server.
 
-The admin route requires the password configured in `HAKU_ADMIN_PASSWORD`. It shows live values only after a valid admin session; when opening the HTML file without the API, the UI shows clearly labeled sample data.
+The admin route requires the password configured in `HAKU_ADMIN_PASSWORD`.
+
+## Telegram Bot welcome webhook
+
+After every deployment, and whenever you add an active Bot to `HAKU_BOTS_JSON`, run `node scripts/set-webhook.mjs` on the server. Use `node scripts/set-webhook.mjs --dry-run` to preview the operations first. Registration requires an HTTPS `HAKU_PUBLIC_ORIGIN` and configures the webhook, Mini App menu button, and localized Bot profile copy. Keep Bot tokens in the server's `.env` or secret store; the script never prints tokens or webhook secrets. If a reverse proxy allowlists paths, permit `/api/telegram/webhook/`.
+ It shows live values only after a valid admin session; when opening the HTML file without the API, the UI shows clearly labeled sample data.
 
 ## Storage and deployment notes
 
