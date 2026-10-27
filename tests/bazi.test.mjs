@@ -7,7 +7,7 @@ const inlineScripts = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)];
 assert.ok(inlineScripts.length > 0, "haku.html must contain its inline application script");
 for (const [, source] of inlineScripts) new vm.Script(source);
 const start = html.indexOf("function fourPillars(");
-const end = html.indexOf("\n  function analyzeElements", start);
+const end = html.indexOf("\n  function localTermOnDate", start);
 assert.ok(start >= 0 && end > start, "fourPillars must exist in the inline script");
 const fourPillars = vm.runInNewContext("(" + html.slice(start, end).trim() + ")");
 const stems = ["甲","乙","丙","丁","戊","己","庚","辛","壬","癸"];
@@ -24,6 +24,8 @@ const extractFunction = (name, nextName, context = {}) => {
 };
 const analyzeElements = extractFunction("analyzeElements", "elementNarrative", {ELEMENTS:elements});
 const elementNarrative = extractFunction("elementNarrative", "buildReadingFacts");
+const localTermOnDate = extractFunction("localTermOnDate", "unknownTimePillars", {fourPillars});
+const unknownTimePillars = extractFunction("unknownTimePillars", "analyzeElements", {fourPillars,localTermOnDate});
 let localeSource = html.slice(html.indexOf("const T ="), html.indexOf("const $="));
 localeSource = localeSource.replace("const T =", "globalThis.T =").replace("const F=", "globalThis.F=").replace("const A=", "globalThis.A=");
 const localeCopy = {};
@@ -57,6 +59,13 @@ assert.equal(balanced1930.weeklyElement, "earth", "Metal day master chooses Eart
 assert.equal(text(fourPillars(2024,2,4,10,0,8,true).year), "癸卯");
 assert.equal(text(fourPillars(2024,2,4,20,0,8,true).year), "甲辰");
 assert.equal(fourPillars(2024,2,4,12,0,8,false).hour, null);
+const uncertainLiChun = unknownTimePillars(2024,2,4,8,"unknown");
+assert.deepEqual(Array.from(uncertainLiChun.pillarOptions.year, text), ["癸卯","甲辰"]);
+assert.deepEqual(Array.from(uncertainLiChun.pillarOptions.month, text), ["乙丑","丙寅"]);
+const afterLiChun = unknownTimePillars(2024,2,4,8,"after");
+assert.equal(text(afterLiChun.pillars.year), "甲辰");
+assert.equal(text(afterLiChun.pillars.month), "丙寅");
+assert.equal(localTermOnDate(2024,2,5,8), null);
 
 const before23 = fourPillars(2000,1,1,22,30,8,true).day;
 const after23 = fourPillars(2000,1,1,23,30,8,true).day;
