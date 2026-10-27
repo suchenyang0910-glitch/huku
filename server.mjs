@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +8,118 @@ import { BOT_COPY } from './bot-copy.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 loadEnv(resolve(ROOT, '.env'));
+
+function ensureAdminSchema(database) {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS admins (
+      id TEXT PRIMARY KEY,
+      username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('owner', 'viewer')),
+      created_at TEXT NOT NULL,
+      disabled INTEGER NOT NULL DEFAULT 0 CHECK (disabled IN (0, 1))
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id TEXT PRIMARY KEY,
+      admin_id TEXT REFERENCES admins(id),
+      action TEXT NOT NULL,
+      target TEXT,
+      at TEXT NOT NULL,
+      ip TEXT NOT NULL
+    ) STRICT;
+    CREATE INDEX IF NOT EXISTS audit_log_at_idx ON audit_log(at DESC);
+  `);
+}
+
+function hashAdminPassword(password) {
+  const salt = randomBytes(16);
+  const key = scryptSync(password, salt, 64);
+  return `scrypt$${salt.toString('base64url')}$${key.toString('base64url')}`;
+}
+
+function verifyAdminPassword(password, storedHash) {
+  if (typeof password !== 'string' || typeof storedHash !== 'string') return false;
+  const parts = storedHash.split('$');
+  if (parts.length !== 3 || parts[0] !== 'scrypt') return false;
+  try {
+    const salt = Buffer.from(parts[1], 'base64url');
+    const expected = Buffer.from(parts[2], 'base64url');
+    const actual = scryptSync(password, salt, expected.length);
+    return actual.length === expected.length && timingSafeEqual(actual, expected);
+  } catch { return false; }
+}
+
+async function readAdminPassword() {
+  if (process.stdin.isTTY && typeof process.stdin.setRawMode === 'function') {
+    return new Promise((resolvePassword, rejectPassword) => {
+      const input = process.stdin;
+      let bytes = [];
+      const finish = (error, value) => {
+        input.off('data', onData);
+        input.setRawMode(false);
+        process.stderr.write('\n');
+        error ? rejectPassword(error) : resolvePassword(value);
+      };
+      const onData = (chunk) => {
+        for (const byte of chunk) {
+          if (byte === 3) return finish(new Error('Input cancelled'));
+          if (byte === 10 || byte === 13) return finish(null, Buffer.from(bytes).toString('utf8'));
+          if (byte === 8 || byte === 127) {
+            if (bytes.length) {
+              bytes.pop();
+              while (bytes.length && (bytes[bytes.length - 1] & 0xc0) === 0x80) bytes.pop();
+            }
+          } else if (byte >= 32) bytes.push(byte);
+        }
+      };
+      process.stderr.write('Password (input hidden): ');
+      input.setRawMode(true);
+      input.resume();
+      input.on('data', onData);
+    });
+  }
+  let value = '';
+  for await (const chunk of process.stdin) value += chunk.toString('utf8');
+  return value.replace(/\r?\n$/, '');
+}
+
+async function createAdminCommand(args) {
+  if (args.length !== 2 || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{2,31}$/.test(args[0]) || !['owner', 'viewer'].includes(args[1])) {
+    throw new Error('Usage: node server.mjs create-admin <username> <owner|viewer>');
+  }
+  const [requestedUsername, role] = args;
+  const username = requestedUsername.toLowerCase();
+  const password = await readAdminPassword();
+  if (Buffer.byteLength(password, 'utf8') < 16 || Buffer.byteLength(password, 'utf8') > 1024) {
+    throw new Error('Password must contain 16 to 1024 bytes');
+  }
+  const dbPath = resolve(ROOT, process.env.HAKU_DB_PATH || './data/haku.sqlite');
+  mkdirSync(dirname(dbPath), { recursive: true });
+  const database = new DatabaseSync(dbPath);
+  try {
+    ensureAdminSchema(database);
+    const id = randomBytes(16).toString('hex');
+    database.prepare('INSERT INTO admins (id, username, password_hash, role, created_at, disabled) VALUES (?, ?, ?, ?, ?, 0)')
+      .run(id, username, hashAdminPassword(password), role, new Date().toISOString());
+  } finally {
+    database.close();
+  }
+  process.stdout.write(`Created admin ${username} (${role})\n`);
+}
+
+if (process.argv[2] === 'create-admin') {
+  try {
+    await createAdminCommand(process.argv.slice(3));
+    process.exit(0);
+  } catch (error) {
+    console.error(error.message || 'Could not create admin');
+    process.exit(1);
+  }
+}
+if (process.argv.length > 2) {
+  console.error('Usage: node server.mjs [create-admin <username> <owner|viewer>]');
+  process.exit(2);
+}
 
 function loadEnv(path) {
   let raw;
@@ -31,8 +143,9 @@ function required(name, minimum = 1) {
 }
 
 const sessionSecret = required('HAKU_SESSION_SECRET', 32);
-const adminPassword = required('HAKU_ADMIN_PASSWORD', 16);
-if (/replace-with/i.test(sessionSecret) || /replace-with/i.test(adminPassword)) throw new Error('Replace the example session secret and admin password before starting');
+const legacyAdminPassword = process.env.HAKU_ADMIN_PASSWORD || '';
+if (/replace-with/i.test(sessionSecret)) throw new Error('Replace the example session secret before starting');
+const dummyAdminPasswordHash = hashAdminPassword(randomBytes(32).toString('base64url'));
 const consentVersion = required('HAKU_CONSENT_VERSION', 1);
 const retentionDays = Number(process.env.HAKU_RETENTION_DAYS || 365);
 if (!Number.isSafeInteger(retentionDays) || retentionDays < 1) throw new Error('HAKU_RETENTION_DAYS must be a positive whole number');
@@ -102,6 +215,13 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS users_last_seen_idx ON users(last_seen DESC);
 `);
 
+ensureAdminSchema(db);
+
+const auditInsert = db.prepare('INSERT INTO audit_log (id, admin_id, action, target, at, ip) VALUES (?, ?, ?, ?, ?, ?)');
+function writeAudit(adminId, action, target, ip) {
+  auditInsert.run(randomBytes(16).toString('hex'), adminId || null, action, target || null, new Date().toISOString(), ip || 'unknown');
+}
+
 function cleanExpiredUsers() {
   const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
   db.prepare('DELETE FROM users WHERE last_seen < ?').run(cutoff);
@@ -141,11 +261,11 @@ function parseCookies(header = '') {
   return out;
 }
 
-function issueSession(res, { type, telegramId = null, botId = null }) {
+function issueSession(res, { type, telegramId = null, botId = null, adminId = null, username = null, role = null }) {
   const id = randomBytes(32).toString('base64url');
   const csrf = randomBytes(24).toString('base64url');
   const now = Date.now();
-  sessions.set(id, { type, telegramId, botId, csrf, expiresAt: now + (type === 'admin' ? ADMIN_SESSION_MS : SESSION_MS) });
+  sessions.set(id, { type, telegramId, botId, adminId, username, role, csrf, expiresAt: now + (type === 'admin' ? ADMIN_SESSION_MS : SESSION_MS) });
   const value = `${id}.${signature(id)}`;
   const maxAge = type === 'admin' ? 8 * 60 * 60 : 12 * 60 * 60;
   const sameSite = cookieSameSite[0].toUpperCase() + cookieSameSite.slice(1);
@@ -203,9 +323,14 @@ async function readJson(req, maxBytes = 32_768) {
   catch { throw Object.assign(new Error('Invalid JSON body'), { status: 400 }); }
 }
 
-function rateLimit(req, key, maximum, windowMs = RATE_WINDOW_MS) {
+function clientIp(req) {
   let address = req.socket.remoteAddress || 'unknown';
   if (trustProxy && typeof req.headers['x-forwarded-for'] === 'string') address = req.headers['x-forwarded-for'].split(',').at(-1).trim() || address;
+  return address;
+}
+
+function rateLimit(req, key, maximum, windowMs = RATE_WINDOW_MS) {
+  const address = clientIp(req);
   const bucketKey = `${key}:${address}`;
   const now = Date.now();
   const bucket = attempts.get(bucketKey);
@@ -341,6 +466,14 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url || '/', 'http://localhost');
   const path = url.pathname;
 
+  if (path.startsWith('/api/admin/') && !['GET', 'HEAD'].includes(req.method) &&
+      path !== '/api/admin/login' && path !== '/api/admin/logout') {
+    const session = requireAdmin(req, res);
+    if (!session) return;
+    if (session.role !== 'owner') return json(res, 403, { error: 'owner_role_required' });
+    if (!csrfValid(req, session)) return json(res, 403, { error: 'csrf_invalid' });
+  }
+
   try {
     if (path === '/api/health' && req.method === 'GET') return json(res, 200, { ok: true });
 
@@ -404,6 +537,7 @@ const server = createServer(async (req, res) => {
       const account = db.prepare(`SELECT telegram_id, locale, source_bot_id, first_seen, last_seen, consent_at, consent_version
         FROM users WHERE telegram_id = ?`).get(session.telegramId);
       if (!account) return json(res, 404, { error: 'account_not_found' });
+      writeAudit(null, 'account_export', 'self-service-account', clientIp(req));
       return json(res, 200, account);
     }
 
@@ -416,17 +550,45 @@ const server = createServer(async (req, res) => {
     }
 
     if (path === '/api/admin/login' && req.method === 'POST') {
-      if (!rateLimit(req, 'admin-login', 8)) return json(res, 429, { error: 'rate_limited' });
+      if (!rateLimit(req, 'admin-login', 8)) {
+        writeAudit(null, 'admin_login_failed', null, clientIp(req));
+        return json(res, 429, { error: 'rate_limited' });
+      }
       const body = await readJson(req, 4096);
-      if (typeof body.password !== 'string' || !safeEqual(body.password, adminPassword)) return json(res, 401, { error: 'admin_login_invalid' });
-      const csrfToken = issueSession(res, { type: 'admin' });
-      return json(res, 200, { authenticated: true, csrfToken });
+      const usernameInput = typeof body?.username === 'string' ? body.username.trim() : '';
+      const username = /^[a-zA-Z0-9][a-zA-Z0-9._-]{2,31}$/.test(usernameInput) ? usernameInput.toLowerCase() : '';
+      const password = typeof body?.password === 'string' ? body.password : '';
+      const admin = db.prepare('SELECT id, username, password_hash, role, disabled FROM admins WHERE username = ? COLLATE NOCASE').get(username);
+      const passwordValid = verifyAdminPassword(password, admin?.password_hash || dummyAdminPasswordHash);
+      let authenticatedAdmin = admin;
+      if (!admin && username === 'owner' && db.prepare('SELECT COUNT(*) AS count FROM admins').get().count === 0 &&
+          legacyAdminPassword.length >= 16 && !/replace-with/i.test(legacyAdminPassword) && safeEqual(password, legacyAdminPassword)) {
+        const migrated = { id: randomBytes(16).toString('hex'), username: 'owner', role: 'owner' };
+        db.prepare('INSERT INTO admins (id, username, password_hash, role, created_at, disabled) VALUES (?, ?, ?, ?, ?, 0)')
+          .run(migrated.id, migrated.username, hashAdminPassword(password), migrated.role, new Date().toISOString());
+        authenticatedAdmin = migrated;
+      }
+      if (!authenticatedAdmin || authenticatedAdmin.disabled || (!passwordValid && authenticatedAdmin === admin)) {
+        writeAudit(admin?.id || null, 'admin_login_failed', username || null, clientIp(req));
+        return json(res, 401, { error: 'admin_login_invalid' });
+      }
+      const csrfToken = issueSession(res, {
+        type: 'admin', adminId: authenticatedAdmin.id,
+        username: authenticatedAdmin.username, role: authenticatedAdmin.role
+      });
+      writeAudit(authenticatedAdmin.id, 'admin_login_success', authenticatedAdmin.username, clientIp(req));
+      return json(res, 200, {
+        authenticated: true,
+        csrfToken,
+        admin: { id: authenticatedAdmin.id, username: authenticatedAdmin.username, role: authenticatedAdmin.role }
+      });
     }
 
     if (path === '/api/admin/logout' && req.method === 'POST') {
       const session = requireAdmin(req, res);
       if (!session) return;
       if (!csrfValid(req, session)) return json(res, 403, { error: 'csrf_invalid' });
+      writeAudit(session.adminId, 'admin_logout', session.username, clientIp(req));
       clearSession(res, req);
       return json(res, 200, { loggedOut: true });
     }

@@ -24,11 +24,15 @@ Saved records are automatically deleted when `last_seen` is older than `HAKU_RET
 
 ## Admin API
 
-The implementation uses a server-configured admin password and a signed, `HttpOnly` session cookie. Login attempts are rate limited. Admin writes require the session CSRF token; every `/api/admin/*` route checks the server session. Hiding the admin tab in the client is not access control. For a team deployment, replace the single admin password with named staff accounts, role authorization, and an audit trail.
+The admin API uses named accounts and a signed, `HttpOnly` session cookie. Passwords are stored as salted scrypt hashes. Login attempts are rate limited. Owners can perform administrative writes; viewers can read the overview only. Admin writes require the session CSRF token, and authorization is enforced by the server. Both roles can log out.
 
 ### `POST /api/admin/login`
 
-Request: `{ "password": "..." }`. On success, sets the admin session cookie and returns `{ "authenticated": true, "csrfToken": "..." }`. Configure the password through `HAKU_ADMIN_PASSWORD`; never put it in the HTML or a client environment variable.
+Request: `{ "username": "...", "password": "..." }`. On success, sets the admin session cookie and returns `{ "authenticated": true, "csrfToken": "...", "admin": { "id": "...", "username": "...", "role": "owner|viewer" } }`. Neither password nor password hash is returned by any API.
+
+Create an account with `node server.mjs create-admin <username> <owner|viewer>`. The password is read from standard input, not command-line arguments or logs. Usernames are 3–32 characters and may contain letters, digits, `.`, `_`, and `-`.
+
+For migration from the previous shared-password setup, `HAKU_ADMIN_PASSWORD` is accepted only when the `admins` table is empty and the submitted username is `owner`. A successful login creates a salted scrypt owner account. Remove the legacy environment variable after that first login. When any named account exists, the legacy password is ignored.
 
 ### `POST /api/admin/logout`
 
@@ -58,6 +62,10 @@ Returns only records the current staff role may view:
 ### Bot status configuration
 
 The UI displays live Bot status as read-only. The active Bot list is configured through `HAKU_BOTS_JSON` and takes effect after a server restart. Keep Bot tokens in server environment or secret storage. Do not add a client-side token field.
+
+### Roles and audit log
+
+The `admins` table stores `id`, `username`, `password_hash`, `role` (`owner` or `viewer`), `created_at`, and `disabled`. A viewer can read `GET /api/admin/overview`; write requests under `/api/admin/` return `403` for viewers. The `audit_log` table stores `id`, nullable `admin_id`, `action`, `target`, `at`, and `ip`. It records successful and failed admin logins, admin logout, and account data exports. Self-service account exports have a null `admin_id` and use a generic target so the audit record does not retain the user's Telegram ID.
 
 ## Telegram Bot webhook
 

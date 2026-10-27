@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createHmac, randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { createServer } from 'node:http';
@@ -10,7 +10,9 @@ import { tmpdir } from 'node:os';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const secret = randomBytes(32).toString('base64url');
-const adminPassword = 'test-' + randomBytes(24).toString('base64url');
+const ownerPassword = 'owner-' + randomBytes(24).toString('base64url');
+const viewerPassword = 'viewer-' + randomBytes(24).toString('base64url');
+const legacyPassword = 'legacy-' + randomBytes(24).toString('base64url');
 const botToken = '123456:' + randomBytes(24).toString('base64url');
 const userId = String(700000000 + randomBytes(4).readUInt32BE(0));
 const staleUserId = String(800000000 + randomBytes(4).readUInt32BE(0));
@@ -91,7 +93,9 @@ async function request(path, { method = 'GET', body, cookie, csrf } = {}) {
     ...(body === undefined ? {} : { body: JSON.stringify(body) })
   });
   const text = await response.text();
-  return { status: response.status, headers: response.headers, body: text ? JSON.parse(text) : null };
+  const parsed = text ? JSON.parse(text) : null;
+  assert.doesNotMatch(JSON.stringify(parsed), /password_hash|scrypt\$/i, 'API responses never expose password hashes');
+  return { status: response.status, headers: response.headers, body: parsed };
 }
 
 async function createUserSession(id) {
@@ -105,10 +109,10 @@ async function createUserSession(id) {
   return { cookie, csrf: auth.body.csrfToken };
 }
 
-async function loginAdmin() {
+async function loginAdmin(username = 'owner', password = ownerPassword) {
   const login = await request('/api/admin/login', {
     method: 'POST',
-    body: { password: adminPassword }
+    body: { username, password }
   });
   assert.equal(login.status, 200, 'admin login succeeds');
   return login.headers.get('set-cookie')?.split(';')[0];
@@ -128,12 +132,36 @@ try {
     HAKU_COOKIE_SAMESITE: 'lax',
     HAKU_TRUSTED_PROXY: 'false',
     HAKU_SESSION_SECRET: secret,
-    HAKU_ADMIN_PASSWORD: adminPassword,
+    HAKU_ADMIN_PASSWORD: legacyPassword,
     HAKU_DB_PATH: dbPath,
     HAKU_CONSENT_VERSION: consentVersion,
     HAKU_RETENTION_DAYS: '365',
     HAKU_BOTS_JSON: JSON.stringify(bots)
   };
+
+  for (const [username, role, password] of [
+    ['owner', 'owner', ownerPassword],
+    ['viewer', 'viewer', viewerPassword]
+  ]) {
+    const created = spawnSync(process.execPath, [join(ROOT, 'server.mjs'), 'create-admin', username, role], {
+      cwd: ROOT,
+      env: childEnv,
+      input: password + '\n',
+      encoding: 'utf8'
+    });
+    assert.equal(created.status, 0, `create-admin creates ${role}: ${created.stderr}`);
+    assert.equal(created.stdout.includes(password) || created.stderr.includes(password), false,
+      'create-admin output never prints the password');
+  }
+  const storedAdmins = new DatabaseSync(dbPath);
+  const adminRows = storedAdmins.prepare('SELECT username, password_hash, role FROM admins ORDER BY username').all();
+  storedAdmins.close();
+  assert.equal(adminRows.length, 2);
+  assert.ok(adminRows.every((row) => /^scrypt\$[A-Za-z0-9_-]+\$[A-Za-z0-9_-]+$/.test(row.password_hash)));
+  assert.ok(adminRows.some((row) => row.username === 'owner' && row.role === 'owner'));
+  assert.ok(adminRows.some((row) => row.username === 'viewer' && row.role === 'viewer'));
+  assert.equal(adminRows.some((row) => [ownerPassword, viewerPassword].includes(row.password_hash)), false);
+
   await startServer();
 
   assert.equal((await request('/api/telegram/account/delete', { method: 'POST' })).status, 401,
@@ -165,7 +193,36 @@ try {
     assert.ok(Number.isFinite(Date.parse(exported.body[field])), `${field} is an ISO timestamp`);
   }
 
-  const adminCookie = await loginAdmin();
+  assert.equal((await request('/api/admin/login', {
+    method: 'POST', body: { username: 'unknown-admin', password: ownerPassword }
+  })).status, 401, 'unknown username is rejected');
+  assert.equal((await request('/api/admin/login', {
+    method: 'POST', body: { username: 'owner', password: viewerPassword }
+  })).status, 401, 'wrong password is rejected');
+  assert.equal((await request('/api/admin/login', {
+    method: 'POST', body: { username: 'owner', password: legacyPassword }
+  })).status, 401, 'legacy shared password is ignored once named admins exist');
+
+  const ownerLogin = await request('/api/admin/login', {
+    method: 'POST', body: { username: 'owner', password: ownerPassword }
+  });
+  assert.equal(ownerLogin.status, 200);
+  assert.deepEqual(ownerLogin.body.admin.role, 'owner');
+  const adminCookie = ownerLogin.headers.get('set-cookie')?.split(';')[0];
+  const ownerCsrf = ownerLogin.body.csrfToken;
+  const viewerLogin = await request('/api/admin/login', {
+    method: 'POST', body: { username: 'viewer', password: viewerPassword }
+  });
+  assert.equal(viewerLogin.status, 200);
+  assert.deepEqual(viewerLogin.body.admin.role, 'viewer');
+  const viewerCookie = viewerLogin.headers.get('set-cookie')?.split(';')[0];
+  const viewerCsrf = viewerLogin.body.csrfToken;
+  assert.equal((await request('/api/admin/overview', { cookie: viewerCookie })).status, 200,
+    'viewer can read overview');
+  assert.equal((await request('/api/admin/overview', {
+    method: 'POST', cookie: viewerCookie, csrf: viewerCsrf, body: {}
+  })).status, 403, 'viewer cannot perform admin writes');
+
   const overviewBefore = await request('/api/admin/overview', { cookie: adminCookie });
   assert.equal(overviewBefore.status, 200);
   assert.ok(overviewBefore.body.users.some((user) => user.id === userId), 'saved user appears in overview before deletion');
@@ -178,6 +235,11 @@ try {
   assert.equal(overviewAfter.status, 200);
   assert.equal(overviewAfter.body.users.some((user) => user.id === userId), false,
     'deleted user no longer appears in admin overview');
+
+  const logout = await request('/api/admin/logout', {
+    method: 'POST', cookie: adminCookie, csrf: ownerCsrf
+  });
+  assert.deepEqual({ status: logout.status, body: logout.body }, { status: 200, body: { loggedOut: true } });
 
   const db = new DatabaseSync(dbPath);
   const expired = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000).toISOString();
@@ -194,8 +256,45 @@ try {
   assert.equal(afterRetentionCleanup.body.users.some((user) => user.id === staleUserId), false,
     'record older than the configured retention period is cleaned at startup');
 
+  let limited = false;
+  for (let i = 0; i < 10 && !limited; i++) {
+    const attempt = await request('/api/admin/login', {
+      method: 'POST', body: { username: 'owner', password: 'incorrect-' + i }
+    });
+    assert.ok(attempt.status === 401 || attempt.status === 429);
+    limited = attempt.status === 429;
+  }
+  assert.equal(limited, true, 'admin login attempts remain rate limited');
+
+  const auditDb = new DatabaseSync(dbPath);
+  const auditActions = auditDb.prepare('SELECT action, admin_id, target FROM audit_log').all();
+  auditDb.close();
+  assert.ok(auditActions.some((entry) => entry.action === 'admin_login_success' && entry.admin_id));
+  assert.ok(auditActions.some((entry) => entry.action === 'admin_login_failed'));
+  assert.ok(auditActions.some((entry) => entry.action === 'admin_logout' && entry.admin_id));
+  assert.ok(auditActions.some((entry) => entry.action === 'account_export' && entry.admin_id === null));
+  assert.ok(auditActions.some((entry) => entry.action === 'account_export' && entry.target === 'self-service-account'));
+
   assert.equal(stdout.includes(secret) || stderr.includes(secret), false, 'logs do not contain the session secret');
   assert.equal(stdout.includes(botToken) || stderr.includes(botToken), false, 'logs do not contain the Bot token');
+  assert.equal(stdout.includes(ownerPassword) || stderr.includes(ownerPassword), false, 'logs do not contain admin passwords');
+  assert.equal(stdout.includes(viewerPassword) || stderr.includes(viewerPassword), false, 'logs do not contain admin passwords');
+
+  await stopServer();
+  const legacyDbPath = join(tempDir, 'legacy.sqlite');
+  childEnv = { ...childEnv, PORT: String(await probePort()), HAKU_DB_PATH: legacyDbPath };
+  await startServer();
+  const legacyLogin = await request('/api/admin/login', {
+    method: 'POST', body: { username: 'owner', password: legacyPassword }
+  });
+  assert.equal(legacyLogin.status, 200, 'legacy shared password can initialize the first owner');
+  assert.equal(legacyLogin.body.admin.role, 'owner');
+  const legacyDb = new DatabaseSync(legacyDbPath);
+  const migratedHash = legacyDb.prepare('SELECT password_hash FROM admins WHERE username = ?').get('owner').password_hash;
+  legacyDb.close();
+  assert.match(migratedHash, /^scrypt\$/);
+  assert.notEqual(migratedHash, legacyPassword, 'legacy password is migrated to a salted scrypt hash');
+
   console.log('api.test.mjs: all assertions passed');
 } finally {
   await stopServer();
