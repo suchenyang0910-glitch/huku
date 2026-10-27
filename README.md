@@ -134,6 +134,17 @@ After the upgraded service is healthy, run `node scripts/set-webhook.mjs` once i
 
 After health and both domains are verified, retain the previous image or commit until the rollback window closes. To roll back, check out the previous known-good commit (placeholder: <PREVIOUS_COMMIT>), rebuild, recreate Haku with the same data directory, and verify health. Do not run two containers against the same SQLite file.
 
+### Solar-term table
+
+`haku.html` embeds the 12 month-defining solar terms for 1930 through the year after the current release. Regenerate the table with Astronomy Engine 2.1.19 (MIT license) as a build-only dependency; it is not used by the browser or server at runtime:
+
+~~~sh
+npm install --no-save --ignore-scripts astronomy-engine@2.1.19
+node scripts/generate-solar-terms.mjs
+~~~
+
+The checked-in validation compares the generated UTC minutes with published tables from the National Astronomical Observatory of Japan and Taipei Astronomical Museum, allowing at most one minute of difference.
+
 ## Storage and deployment notes
 
 - The database is `data/haku.sqlite` unless `HAKU_DB_PATH` is changed. Back it up with the service stopped or use SQLite's online backup facilities.

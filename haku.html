@@ -218,22 +218,23 @@ window.HAKU_API_BASE=window.HAKU_API_BASE||(/^https?:$/.test(location.protocol)?
   const answers={date:'',time:'',unknownTime:false,termSide:'',relationship:-1,concern:-1,duration:-1,place:'',placeExplicit:false};let storyFacts=null;const ELEMENTS=['wood','fire','earth','metal','water'];const STEMS=['甲','乙','丙','丁','戊','己','庚','辛','壬','癸'];const BRANCHES=['子','丑','寅','卯','辰','巳','午','未','申','酉','戌','亥'];const PLACE_TZ={kh:7,th:7,vn:7,cn:8,sg:8,my:8};const DEFAULT_PLACE={en:'kh',vi:'vn',zh:'cn',km:'kh',th:'th'};
   const homeSections=['.mini-layout','.section-head','.story-preview'];
   function showHome(){$('#reading-disclaimer').hidden=true;homeSections.forEach(s=>$(s).hidden=false);$('#reading-flow').hidden=true;$('#question-screen').hidden=true;$('#reading-wait').hidden=true;$('#manga-screen').hidden=true;$('#feedback-screen').hidden=true;syncTelegramBackButton();window.scrollTo({top:0,behavior:'smooth'})}
+  // solar-terms:start
+  const SOLAR_TERM_BASE_YEAR=1930,SOLAR_TERM_LAST_YEAR=2027,SOLAR_TERM_START=-21031137,SOLAR_TERM_DELTAS='wrox2pxkxy5qynjyxayw1yk8y19xgiwziwqhwrmx2lxkuy5qynkyxcyw3yk8y1axgjwziwqhwrkx2kxkty5pynlyxcyw4yk7y17xggwzhwqgwrmx2nxkvy5rynnyxfyw5yk8y16xgfwzhwqiwrmx2nxkty5oyniyxbyw4yk8y19xgiwzhwqiwrnx2lxksy5myniyxbyw7ykcy1bxgiwzgwqewrix2kxkty5qynmyxgyw9ykey1cxgiwzfwqewrix2ixkty5pynlyxbyw4ykay1bxgkwzjwqhwrkx2jxkqy5nynkyxcyw6ykby1exgnwzlwqiwrjx2fxkny5kyniyxfyw9ykfy1fxgmwzmwqiwrkx2gxkny5iyngyxcyw8ykdy1dxglwzjwqiwrmx2kxkry5lynhyxcyw7ykey1exgmwzkwqjwrmx2kxkqy5kyndyx8yw2ykcy1gxgpwzowqkwrlx2ixkpy5iyneyx8yw3ykdy1fxgpwzmwqiwrkx2hxkqy5lynkyxdyw7ykcy1exgmwzlwqjwrlx2ixkqy5lynhyx9yw2yk9y1bxglwzmwqkwrox2kxkqy5kynfyxayw4ykcy1exgmwzlwqiwrlx2hxkoy5jynhyxcyw9ykgy1hxgnwzjwqgwrix2gxkny5jyngyxbyw7ykfy1fxgnwzjwqfwrix2gxkpy5lyniyxdyw7ykfy1hxgpwzmwqhwrix2exkly5hyneyxayw6ykfy1ixgswzpwqlwrjx2exkiy5cynbyxayw8ykgy1jxgqwzowqjwrjx2exkky5fyneyxdywaykjy1jxgpwzmwqiwrkx2hxkmy5fyncyx7yw4ykey1ixgqwzowqlwrlx2hxkny5fynbyx6yw4ykfy1kxgtwzpwqkwrix2dxkky5fyneyxayw8ykiy1kxguwzpwqkwrix2cxkjy5eyneyxayw7ykey1hxgqwzowqlwrkx2fxkly5fynfyxbyw8ykgy1ixgqwzowqlwrkx2gxkjy5dynbyx9yw8ykiy1kxgtwzqwqlwrjx2fxkiy5bynayx8yw8ykky1mxgswzowqhwrgx2dxkjy5fyneyxdywbykly1oxgtwzowqhwrgx2cxkjy5fyndyx9yw6ykgy1mxgvwzswqlwrix2cxkhy5cynayx7yw7ykiy1nxgwwztwqmwrix29xkey59ynayxcywbykny1oxgwwztwqlwrjx2bxkey59yn9yx8yw8ykky1mxgtwzqwqlwrkx2fxkiy5byn8yx7yw7ykjy1oxgvwzrwqlwrkx2dxkhy5byn7yx5yw6ykjy1pxgzwzuwqmwrjx2bxkfy59yn6yx5yw6ykjy1nxgxwzswqkwrhx2axkfy5byncyxbyw9ykky1oxgvwzrwqkwrix2cxkgy5bynayx8yw6ykhy1lxgvwzswqnwrkx2cxkfy59yn6yx7yw7ykky1oxgwwzrwqlwrgx29xkdy58yn9yxaywdykqy1sxgywzrwqjwrex28xkcy59yn9yx9ywaykmy1rxgxwzswqjwrex29xkdy58yn9yx8ywaykmy1sxh0wzwwqlwrgx27xkay55yn5yx8ywaykoy1uxh3wzywqpwrix27xk8y51yn3yx5ywaykoy1txh1wzvwqnwrix29xkay54yn5yx8ywbykqy1uxh0wzvwqmwrjx2axkey56yn4yx4yw6ykmy1sxh2wzxwqowrkx2bxkdy56yn2yx2yw4ykmy1sxh3wzywqnwrhx28xkay55yn6yx8ywaykpy1uxh3wzxwqnwrgx28xkay55yn8yx8yw8ykly1qxgzwzvwqowrix2axkcy56yn6yx7yw9ykmy1qxgzwzwwqnwrix29xkby53yn4yx7ywbykqy1uxh2wzwwqnwrhx27xk9y53yn2yx6ywbykqy1vxh2wztwqjwrex25xkay55yn5yx9ywdyksy1xxh3wzuwqjwrdx25xk9y55yn5yx7yw9ykpy1wxh5wzzwqnwrgx24xk6y51yn1yx5yw9ykpy1wxh6x00wqowrfx22xk2y4xyn2yx8yweykvy20xh6wzywqowrfx24xk5y4yyn1yx6ywcykry1xxh4wzywqnwrhx27xk8y50ymzyx2yw9ykqy1xxh7wzzwqowrhx25xk6y4zymyyx2yw9yksy21xhax02wqqwrhx24xk4y4yymzyx3yw8ykqy1yxh7x00wqpwrfx24xk5y50yn1yx6ywcykqy1xxh6wzzwqpwrgx26xk6y51yn1yx5ywaykqy1wxh6x00wqqwrjx27xk6y4zymyyx3yw9ykry1yxh6wzzwqnwrfx23xk4y4yyn0yx7ywfykwy23xh9wzywqmwrcx22xk4y50yn3yx7ywdykuy20xh8wzzwqnwrdx22xk4y4zyn2yx4ywbykty20xhax02wqpwrfx20xk0y4uymyyx5yweykwy24xhdx05wqrwrgx21xjzy4symwyx4ywdykwy23xh9x02wqpwrfx22xk2y4uymwyx4ywdykwy23xhax01wqpwrfx24xk4y4wymxyx1yw9ykuy23xhcx04wqqwrhx23xk3y4wymvywzyw7yksy23xhcx05wqpwrex20xjzy4tymyyx4ywcykwy25xhcx04wqqwrdx20xjzy4vyn0yx5ywdykty20xhax02wqqwrgx22xk1y4vymxyx3ywaykty21xh9x03wqqwrgx21xjzy4rymvyx2yweykyy27xhdx04wqpwrex20xjzy4rymvyx3ywdykzy26xhcx02wqnwrbx1zxjzy4tymxyx3ywdykyy27xhex03wqowrcx1yxjyy4tymwyx3ywbykxy26xhgx08wqtwrfx1yxjwy4qymuyx0ywbykwy26xhgx08wqswrex1xxjuy4nymsyx3ywgyl0y29xhgx06wqrwrex1zxjxy4qymuyx2yweykzy27xhex05wqrwrfx22xjzy4symtywzywaykwy27xhfx07wqrwrfx1zxjwy4pymsyx0ywcykyy2bxhjx09wqswrex1yxjvy4pymuyx2yweykyy27xhgx07wqrwrdx1xxjwy4rymuyx4ywdykyy26xhfx05wqrwrex1zxjwy4qymuyx2ywdykyy28xhgx07wqswrgx1zxjxy4oymsyx1ywdykzy29xhgx06wqqwrbx1wxjty4nymsyx2ywhyl4y2cxhjx07wqnwrax1txjuy4pymvyx3ywgyl2y2bxhjx08wqqwrbx1vxjty4oymtyx1ywdykzy2axhkx0awqtwrdx1txjoy4iymoyx0ywfyl3y2fxhnx0cwqvwrdx1uxjpy4iymnyx0ywhyl4y2dxhkx09wqswrex1vxjsy4kymoywyyweyl2y2cxhkx09wqswrdx1xxjuy4kymoywwywayl1y2dxhnx0dwquwrfx1xxjty4lymoywwywaykzy2cxhnx0cwqtwrcx1txjqy4kymoyx0ywdyl2y2dxhmx0b';
+  // solar-terms:end
+  const SOLAR_TERM_MINUTES=(()=>{let minute=SOLAR_TERM_START;const values=[minute];for(let i=0;i<SOLAR_TERM_DELTAS.length;i+=3){minute+=parseInt(SOLAR_TERM_DELTAS.slice(i,i+3),36);values.push(minute)}return values})();
+  function solarTermState(utcMinute){
+    let low=0,high=SOLAR_TERM_MINUTES.length;
+    while(low<high){const mid=Math.floor((low+high)/2);if(SOLAR_TERM_MINUTES[mid]<=utcMinute)low=mid+1;else high=mid}
+    if(low===0)return {year:SOLAR_TERM_BASE_YEAR-1,termIndex:11};
+    const index=low-1;return {year:SOLAR_TERM_BASE_YEAR+Math.floor(index/12),termIndex:index%12};
+  }
   function fourPillars(y,m,d,hh,mm,tz,hasHour){
     const offset=typeof tz==="number"?tz:Number(String(tz).replace(/^UTC/i,"").replace(":00",""));
     const hour=hasHour?Number(hh):12,minute=hasHour?Number(mm):0;
-    const jd=(Date.UTC(y,m-1,d,hour,minute)-offset*3600000)/86400000+2440587.5;
     const mod=(n,b)=>((n%b)+b)%b;
-    const solarLongitude=(j)=>{
-      const T=(j-2451545)/36525;
-      const L0=mod(280.46646+36000.76983*T+0.0003032*T*T,360);
-      const M=mod(357.52911+35999.05029*T-0.0001537*T*T+T*T*T/24490000,360)*Math.PI/180;
-      const C=(1.914602-0.004817*T-0.000014*T*T)*Math.sin(M)+(0.019993-0.000101*T)*Math.sin(2*M)+0.000289*Math.sin(3*M);
-      const omega=(125.04-1934.136*T)*Math.PI/180;
-      return mod(L0+C-0.00569-0.00478*Math.sin(omega),360);
-    };
-    const longitude=solarLongitude(jd),beforeLiChun=(m===1||m===2)&&longitude<315,year=beforeLiChun?y-1:y;
+    const term=solarTermState(Math.floor((Date.UTC(y,m-1,d,hour,minute)-offset*3600000)/60000)),year=term.termIndex===0?term.year-1:term.year;
     const yearStem=mod(year-4,10),yearBranch=mod(year-4,12);
-    const monthSlot=Math.floor(mod(longitude-315,360)/30),monthBranch=mod(2+monthSlot,12);
+    const monthSlot=mod(term.termIndex+11,12),monthBranch=mod(2+monthSlot,12);
     const firstMonthStem=({0:2,1:4,2:6,3:8,4:0,5:2,6:4,7:6,8:8,9:0})[yearStem];
     const monthStem=mod(firstMonthStem+monthSlot,10);
     const a=Math.floor((14-m)/12),yy=y+4800-a,mon=m+12*a-3;
@@ -249,12 +250,12 @@ window.HAKU_API_BASE=window.HAKU_API_BASE||(/^https?:$/.test(location.protocol)?
     return {year:{stem:yearStem,branch:yearBranch},month:{stem:monthStem,branch:monthBranch},day:{stem:dayStem,branch:dayBranch},hour:hourPillar};
   }
   function localTermOnDate(y,m,d,tz){
-    const key=p=>p.year.stem+','+p.year.branch+'|'+p.month.stem+','+p.month.branch,at=minute=>fourPillars(y,m,d,Math.floor(minute/60),minute%60,tz,true),start=key(at(0));
-    if(key(at(1439))===start)return null;
-    let low=0,high=1439;
-    while(low<high){const mid=Math.floor((low+high)/2);if(key(at(mid))===start)low=mid+1;else high=mid}
-    const before=at(Math.max(0,low-1)),after=at(low);
-    return {minute:low,localTime:String(Math.floor(low/60)).padStart(2,'0')+':'+String(low%60).padStart(2,'0'),before,after};
+    const offset=typeof tz==="number"?tz:Number(String(tz).replace(/^UTC/i,"").replace(":00","")),localStart=Date.UTC(y,m-1,d)/60000,start=localStart-offset*60,end=start+1440;
+    let low=0,high=SOLAR_TERM_MINUTES.length;
+    while(low<high){const mid=Math.floor((low+high)/2);if(SOLAR_TERM_MINUTES[mid]<start)low=mid+1;else high=mid}
+    if(low>=SOLAR_TERM_MINUTES.length||SOLAR_TERM_MINUTES[low]>=end)return null;
+    const minute=SOLAR_TERM_MINUTES[low]+offset*60-localStart,before=minute>0?minute-1:0;
+    return {minute,utcMinute:SOLAR_TERM_MINUTES[low],localTime:String(Math.floor(minute/60)).padStart(2,'0')+':'+String(minute%60).padStart(2,'0'),before:fourPillars(y,m,d,Math.floor(before/60),before%60,tz,true),after:fourPillars(y,m,d,Math.floor(minute/60),minute%60,tz,true)};
   }
   function unknownTimePillars(y,m,d,tz,termSide){
     const base=fourPillars(y,m,d,12,0,tz,false),term=localTermOnDate(y,m,d,tz);
