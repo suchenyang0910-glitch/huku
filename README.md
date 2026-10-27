@@ -20,59 +20,133 @@ The admin route uses named `owner` and `viewer` accounts. Only owners can perfor
 
 ## Docker deployment on mini.truesignal.cc
 
-### First deployment
+### Before changing the current server
 
-1. **Inspect the existing listeners before touching ports.** The current 401 response on port 80 does not identify its owner. On the server, inspect listeners and the active service configuration first:
+Do not replace the existing site or Caddy configuration until its owner, content, and active routing have been confirmed. An earlier request without a `Host` header received `401`; that response alone did not identify the site or its owner. The server has since been confirmed to run Caddy, and the proxied hostnames have returned Cloudflare `525` errors because the origin does not currently present usable certificates.
 
-   ~~~sh
-   sudo ss -ltnp '( sport = :80 or sport = :443 )'
-   sudo ps -o user=,pid=,comm= -p <PID>
-   sudo systemctl status nginx apache2 caddy
-   ~~~
+On the server, inspect how Caddy runs and read its current configuration:
 
-   Do not stop or replace the port 80 service until its process owner and purpose are confirmed. If it is Nginx, add the Haku server blocks to that Nginx instance and reload after a successful syntax check. Preserve the active truesignal.cc HTTPS virtual host, its application routes, and its existing document root. The example root in the config is only a placeholder: /var/www/<EXISTING_TRUESIGNAL_SITE_ROOT>.
+~~~sh
+sudo systemctl status caddy --no-pager
+docker ps
+sudo sed -n '1,240p' /etc/caddy/Caddyfile
+sudo ss -ltnp '( sport = :80 or sport = :443 )'
+~~~
 
-2. In Cloudflare, create an Origin Certificate covering mini.truesignal.cc and the existing truesignal.cc hostnames. Install the certificate and private key at the paths referenced in deploy/nginx-haku.conf with owner-only key permissions. In the Cloudflare dashboard, set SSL/TLS encryption mode to **Full (strict)**.
+Confirm whether Caddy is managed by systemd or Docker. Identify who owns the existing `truesignal.cc` content and whether it is still in use. Back up `/etc/caddy/Caddyfile` and the current website files before changing either. Preserve unrelated Caddy sites and routes.
 
-3. Prepare persistent storage and a production .env file. The following values are examples; replace every angle-bracket placeholder on the server and keep the file out of Git:
+After verifying that `/var/www/truesignal/current` is the active site root, make a dated backup:
 
-   ~~~dotenv
-   NODE_ENV=production
-   HOST=127.0.0.1
-   PORT=4173
-   HAKU_PUBLIC_ORIGIN=https://mini.truesignal.cc
-   HAKU_ALLOWED_ORIGINS=https://mini.truesignal.cc
-   HAKU_TRUSTED_PROXY=true
-   HAKU_DB_PATH=/var/lib/haku/haku.sqlite
-   HAKU_RETENTION_DAYS=365
-   HAKU_STATS_TIMEZONE=Asia/Phnom_Penh
-   HAKU_SESSION_SECRET=<GENERATE_A_LONG_RANDOM_SECRET>
-   # Optional: old shared admin password, only while migrating an empty admins table.
-   # HAKU_ADMIN_PASSWORD=<OLD_SHARED_PASSWORD>
-   HAKU_BOTS_JSON=[{"id":"<BOT_ID>","name":"<BOT_NAME>","token":"<BOT_TOKEN>","active":true}]
-   ~~~
+~~~sh
+backup_id="$(date -u +%Y%m%d%H%M%S)"
+sudo install -d -m 0700 /var/backups/truesignal-caddy
+sudo cp -a /etc/caddy/Caddyfile "/var/backups/truesignal-caddy/Caddyfile.$backup_id"
+sudo cp -a "$(readlink -f /var/www/truesignal/current)" "/var/backups/truesignal-caddy/site.$backup_id"
+~~~
 
-   Create /var/lib/haku and give it to the image's node user (UID 1000), for example with install -d -m 0750 -o 1000 -g 1000 /var/lib/haku. The Compose file uses host networking so Node can bind only to 127.0.0.1:4173; it does not publish port 4173 to the network.
+If Caddy runs in Docker, its `127.0.0.1` is the container's loopback, not the host's. Because Haku binds only to host `127.0.0.1:4173`, the simplest supported setup is to run Caddy with host networking on Linux. If host networking cannot be used, bind Haku to a host address reachable from the Caddy container, proxy to that address, and add firewall rules that permit port 4173 only from the Caddy container. Do not expose 4173 publicly.
 
-4. Install the proxy files without replacing the main website configuration. Copy deploy/cloudflare-realip.conf to /etc/nginx/snippets/haku-cloudflare-realip.conf and deploy/nginx-haku.conf into the active Nginx include directory. The real-IP snippet contains the Cloudflare origin-facing ranges from the official list; refresh it before applying and whenever Cloudflare changes its ranges. It trusts CF-Connecting-IP only from those ranges. Nginx replaces X-Forwarded-For with the single resolved $remote_addr value.
+### Origin certificate and Cloudflare
 
-5. Before changing firewall rules, inspect the current rules and verify the required operator source for SSH. Allow SSH only from the approved operator CIDR, allow ports 80 and 443 only from the current Cloudflare IP ranges, and keep 4173 closed externally. Remove any broad existing 80/443 allow rule only after verifying the current website also uses Cloudflare and the replacement allow rules are active. Do not change firewall defaults or SSH rules without confirming the management path remains open.
+In Cloudflare, open **SSL/TLS �� Origin Server** and create an Origin Certificate covering `truesignal.cc` and `*.truesignal.cc`. Install the certificate and private key as `/etc/caddy/certs/truesignal-origin.pem` and `/etc/caddy/certs/truesignal-origin.key`. The private key must have mode `600` and be owned by the Caddy process user; for a container, ensure the file is readable by that container's Caddy user. Set Cloudflare's SSL/TLS mode to **Full (strict)**. The explicit `tls` directives in [deploy/Caddyfile.example](deploy/Caddyfile.example) use this certificate so Caddy does not try to obtain an ACME certificate for these sites.
 
-6. Validate the active Nginx configuration, then reload the existing service without stopping it:
+Authenticated Origin Pulls (AOP) is optional. Enable it for the matching hostnames in Cloudflare, install the corresponding Origin Pull CA at `/etc/caddy/certs/origin-pull-ca.pem`, and add this block inside each site's `tls` block:
 
-   ~~~sh
-   sudo nginx -t
-   sudo systemctl reload nginx
-   ~~~
+~~~caddyfile
+client_auth {
+    mode require_and_verify
+    trust_pool file /etc/caddy/certs/origin-pull-ca.pem
+}
+~~~
 
-   Deploy Haku:
+Use the CA corresponding to the AOP mode you enabled. Do not require client certificates on the origin before AOP is enabled in Cloudflare.
+
+### Prepare and validate the release
+
+The example requires Caddy **2.8.4 or newer**. Check the binary used by systemd with `caddy version`; for Docker, use `docker exec <CADDY_CONTAINER> caddy version`. Prepare the persistent database and a private production `.env` file using `.env.example` as the template. Replace all sample Bot values and generate a unique session secret; do not commit or share `.env`:
+
+~~~dotenv
+NODE_ENV=production
+HOST=127.0.0.1
+PORT=4173
+HAKU_PUBLIC_ORIGIN=https://mini.truesignal.cc
+HAKU_ALLOWED_ORIGINS=https://mini.truesignal.cc
+HAKU_TRUSTED_PROXY=true
+HAKU_DB_PATH=/var/lib/haku/haku.sqlite
+HAKU_RETENTION_DAYS=365
+HAKU_STATS_TIMEZONE=Asia/Phnom_Penh
+HAKU_SESSION_SECRET=<GENERATE_A_LONG_RANDOM_SECRET>
+HAKU_BOTS_JSON=[{"id":"<BOT_ID>","name":"<BOT_NAME>","token":"<BOT_TOKEN>","active":true}]
+~~~
+
+Create the persistent directory for the image's Node user (UID 1000):
+
+~~~sh
+install -d -m 0750 -o 1000 -g 1000 /var/lib/haku
+~~~
+
+Merge the three site blocks from `deploy/Caddyfile.example` into the existing Caddyfile; do not replace the entire file. The global `trusted_proxies` list must stay current with Cloudflare's official IPv4 and IPv6 lists. Only requests from those proxy ranges can use `CF-Connecting-IP` as the client address. Caddy sets the single `X-Forwarded-For` value to `{client_ip}` before forwarding to Node, replacing any visitor-supplied value. Do not add response header overrides to the Mini App site block; Haku sets its own security headers.
+
+Format and validate the merged Caddyfile before reloading:
+
+~~~sh
+caddy fmt --overwrite /etc/caddy/Caddyfile
+caddy validate --config /etc/caddy/Caddyfile
+~~~
+
+For Docker-managed Caddy, format the host-mounted Caddyfile before validation, then validate and reload with `docker exec <CADDY_CONTAINER> caddy validate --config /etc/caddy/Caddyfile` and `docker exec <CADDY_CONTAINER> caddy reload --config /etc/caddy/Caddyfile`. Ensure the mounted Caddyfile is writable for formatting and visible at that container path.
+
+### Start Haku, publish the website, then reload Caddy
+
+Prepare both upstreams before activating the new Caddy routes:
+
+1. From the checked-out Haku repository, start the app and confirm local health:
 
    ~~~sh
    docker compose -f deploy/compose.yml up -d --build
    docker compose -f deploy/compose.yml ps
+   curl -i http://127.0.0.1:4173/api/health
    ~~~
 
-7. In BotFather, set the Bot's Mini App URL (and menu button URL, if used) to https://mini.truesignal.cc.
+   This repository's health route permits unauthenticated `GET` and `HEAD`. If the server still returns `{"error":"UNAUTHENTICATED"}`, do not count it as healthy: check which container or process owns port 4173 and confirm the deployed image was rebuilt from this repository.
+
+2. Publish `site/dist/` using the release directory and `current` symlink procedure in [site/README.md](site/README.md).
+3. After Haku and the static release are ready, reload Caddy. For systemd use `sudo systemctl reload caddy`; for Docker use the `caddy reload` command above. This prevents the new proxy routes from being activated before their upstreams exist.
+4. In BotFather, set the Mini App URL to `https://mini.truesignal.cc`. After deployment, run `node scripts/set-webhook.mjs` from the repository on the server.
+
+### Firewall and verification
+
+Allow ports 80 and 443 only from the current Cloudflare IP ranges. Restrict port 22 to the approved operator source CIDR. Keep 4173 blocked from the public internet. Verify the firewall rules before removing any existing broad allow rule, and confirm the SSH management path remains open before changing rules.
+
+After reload, check each item:
+
+~~~sh
+curl -I https://mini.truesignal.cc/api/health
+curl -I https://truesignal.cc/
+curl -I https://www.truesignal.cc/
+curl -i https://truesignal.cc/this-path-should-not-exist
+~~~
+
+- Mini App health must return `200` without a Cloudflare `525`.
+- The website home must return `200` with the CSP response header.
+- `www.truesignal.cc` must return `301` to `https://truesignal.cc{uri}`.
+- An unknown website route must return status `404` and the contents of `site/dist/404.html`.
+- From outside the server, connecting to `159.223.92.104:4173` must fail.
+- Repeated invalid admin logins from one client must be rate limited. A forged `X-Forwarded-For` must not change the client IP used by the limiter.
+
+If the direct local health check returns `{"error":"UNAUTHENTICATED"}`, investigate the running app before treating the external HTTPS check as meaningful. The repository's health handler is public; this response indicates that the process currently bound to 4173 is not serving the expected code.
+
+### Roll back
+
+Restore the backed-up Caddyfile and validate it before reloading:
+
+~~~sh
+sudo cp /var/backups/truesignal-caddy/Caddyfile.<BACKUP_TIMESTAMP> /etc/caddy/Caddyfile
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl reload caddy
+~~~
+
+For Docker-managed Caddy, restore the host-mounted backup, validate inside the container, then run `docker exec <CADDY_CONTAINER> caddy reload --config /etc/caddy/Caddyfile`. Restore the previous website symlink using the rollback instructions in `site/README.md`. Keep the SQLite backup and previous static release until the rollback window has closed.
 
 ### Create and migrate admin accounts
 
@@ -93,7 +167,7 @@ node scripts/set-webhook.mjs --dry-run
 node scripts/set-webhook.mjs
 ```
 
-The script requires `HAKU_PUBLIC_ORIGIN` to use HTTPS. It registers the webhook, Mini App menu button, and localized Bot profile copy. Keep Bot tokens in the server's `.env` or secret store; the script does not print tokens or webhook secrets. The Nginx example forwards all paths to Node. If your reverse proxy has an allowlist, permit `/api/telegram/webhook/`.
+The script requires `HAKU_PUBLIC_ORIGIN` to use HTTPS. It registers the webhook, Mini App menu button, and localized Bot profile copy. Keep Bot tokens in the server's `.env` or secret store; the script does not print tokens or webhook secrets. The Caddy example forwards all paths to Node. If your reverse proxy has an allowlist, permit `/api/telegram/webhook/`.
 
 ### Cookie compatibility
 
@@ -137,3 +211,4 @@ After health and both domains are verified, retain the previous image or commit 
 - `node:sqlite` is still marked release-candidate in the Node 25 documentation. Pin and qualify the runtime before production upgrades.
 - `HAKU_RETENTION_DAYS` defaults to 365. It controls automatic cleanup based on `last_seen`; users can also export or delete their account from the account card.
 - `HAKU_STATS_TIMEZONE` defaults to `Asia/Phnom_Penh`. Overview counts and `dailyDates` use seven natural days in this timezone; stored `first_seen` values remain UTC ISO timestamps. Set another valid IANA timezone when the admin dashboard should report a different local calendar.
+
