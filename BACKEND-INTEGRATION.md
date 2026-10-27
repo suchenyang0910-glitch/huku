@@ -1,6 +1,6 @@
 # Haku Telegram and admin API contract
 
-This workspace contains a front-end prototype only. The API base is supplied at runtime as `window.HAKU_API_BASE`; without it, Telegram sign-in reports preview mode and admin screens use clearly labeled sample data. No Bot token or Telegram user ID is written to local storage.
+The browser client and Node API are served together by default. A separate API base may be supplied at runtime as `window.HAKU_API_BASE`; without an API, sample data is available only on localhost for development. Public hosts never seed example accounts. No Bot token or Telegram user ID is written to local storage.
 
 ## Telegram Mini App
 
@@ -26,6 +26,8 @@ Saved records are automatically deleted when `last_seen` is older than `HAKU_RET
 
 The admin API uses named accounts and a signed, `HttpOnly` session cookie. Passwords are stored as salted scrypt hashes. Login attempts are rate limited. Owners can perform administrative writes; viewers can read the overview only. Admin writes require the session CSRF token, and authorization is enforced by the server. Both roles can log out.
 
+Set `HAKU_ADMIN_ORIGIN` to the exact admin origin (production: `https://admin.truesignal.cc`). When set, Node returns `404` for every `/api/admin/*` request whose Host does not match that origin. The admin session uses the host-only `haku_admin_session` cookie; Telegram sessions use the separate `haku_session` cookie. Neither cookie sets a `Domain` attribute.
+
 ### `POST /api/admin/login`
 
 Request: `{ "username": "...", "password": "..." }`. On success, sets the admin session cookie and returns `{ "authenticated": true, "csrfToken": "...", "admin": { "id": "...", "username": "...", "role": "owner|viewer" } }`. Neither password nor password hash is returned by any API.
@@ -33,6 +35,10 @@ Request: `{ "username": "...", "password": "..." }`. On success, sets the admin 
 Create an account with `node server.mjs create-admin <username> <owner|viewer>`. The password is read from standard input, not command-line arguments or logs. Usernames are 3–32 characters and may contain letters, digits, `.`, `_`, and `-`.
 
 For migration from the previous shared-password setup, `HAKU_ADMIN_PASSWORD` is accepted only when the `admins` table is empty and the submitted username is `owner`. A successful login creates a salted scrypt owner account. Remove the legacy environment variable after that first login. When any named account exists, the legacy password is ignored.
+
+### `GET /api/admin/session`
+
+Returns `{ "authenticated": false }` or `{ "authenticated": true }` with status `200`. The browser uses this non-sensitive check before requesting the protected overview, avoiding an expected `401` console error on the login screen. It does not return the administrator identity, role, session ID, or CSRF token.
 
 ### `POST /api/admin/logout`
 
@@ -75,7 +81,7 @@ The handler acknowledges updates with `200 {"ok":true}` and processes them async
 
 The webhook only sends the fixed localized welcome copy and an Open Haku button. It does not store or log message content, Telegram user IDs, usernames, or chat IDs, and it creates no account record. The de-duplication and rate-limit state is in memory and is cleared when the process restarts. Telegram API failures are logged with the Bot ID and error type only.
 
-Register active Bots after each deployment or when adding a Bot with `node scripts/set-webhook.mjs` (use `--dry-run` to preview). The script also configures the menu button and localized Bot profile copy. `HAKU_TELEGRAM_API_BASE` defaults to `https://api.telegram.org` and usually does not need to be changed. The deployment proxy example forwards all routes; if a proxy allowlists paths, allow `/api/telegram/webhook/`.
+Register active Bots after each deployment or when adding a Bot with `node scripts/set-webhook.mjs` (use `--dry-run` to preview). The script also configures the menu button and localized Bot profile copy. `HAKU_TELEGRAM_API_BASE` defaults to `https://api.telegram.org` and usually does not need to be changed. The Caddy example forwards all Mini App paths and only `/api/*` on `api.truesignal.cc`, including `/api/telegram/webhook/`.
 
 ## Current storage and limits
 

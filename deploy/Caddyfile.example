@@ -1,0 +1,79 @@
+# Caddy 2.6.2+ example for the existing systemd-managed service.
+# Back up the active /etc/caddy/Caddyfile, then append only the needed site
+# blocks; never overwrite or remove other sites. Validate before reloading:
+#   sudo caddy validate --config /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy
+# Refresh the Cloudflare ranges below from https://www.cloudflare.com/ips-v4/
+# and https://www.cloudflare.com/ips-v6/ before installation and periodically.
+
+truesignal.cc, www.truesignal.cc {
+	@www host www.truesignal.cc
+	redir @www https://truesignal.cc{uri} 301
+
+	root * /var/www/truesignal/current
+	encode zstd gzip
+
+	header {
+		Content-Security-Policy "default-src 'self'; img-src 'self'; font-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+	}
+	@html path / *.html */
+	header @html Cache-Control "public, max-age=300"
+	@static_assets path /assets/*.webp /assets/*.png /assets/*.jpg /assets/*.jpeg /assets/*.svg /fonts/*
+	header @static_assets Cache-Control "public, max-age=604800"
+
+	file_server
+	handle_errors {
+		@not_found expression {http.error.status_code} == 404
+		handle @not_found {
+			rewrite * /404.html
+			file_server
+		}
+	}
+}
+
+mini.truesignal.cc {
+	encode gzip zstd
+	@cloudflare remote_ip 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+	handle @cloudflare {
+		reverse_proxy 127.0.0.1:4183 {
+			header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+		}
+	}
+	handle {
+		respond "Forbidden" 403
+	}
+}
+
+admin.truesignal.cc {
+	encode zstd gzip
+	@cloudflare remote_ip 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+	handle @cloudflare {
+		reverse_proxy 127.0.0.1:4183 {
+			header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+		}
+	}
+	handle {
+		respond "Forbidden" 403
+	}
+}
+
+api.truesignal.cc {
+	encode zstd gzip
+	@cloudflare remote_ip 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+	handle @cloudflare {
+		handle /api/* {
+			reverse_proxy 127.0.0.1:4183 {
+				header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+			}
+		}
+		handle {
+			respond "Not Found" 404
+		}
+	}
+	handle {
+		respond "Forbidden" 403
+	}
+}

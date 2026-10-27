@@ -189,7 +189,14 @@ let publicOriginUrl;
 try { publicOriginUrl = new URL(publicOrigin); } catch { throw new Error('HAKU_PUBLIC_ORIGIN must be a valid origin URL'); }
 if (!['http:', 'https:'].includes(publicOriginUrl.protocol) || publicOriginUrl.origin !== publicOrigin) throw new Error('HAKU_PUBLIC_ORIGIN must not include a path, query, or fragment');
 if (process.env.NODE_ENV === 'production' && publicOriginUrl.protocol !== 'https:') throw new Error('Production HAKU_PUBLIC_ORIGIN must use HTTPS');
-const allowedOrigins = new Set([publicOrigin, ...(process.env.HAKU_ALLOWED_ORIGINS || '').split(',').map((origin) => origin.trim())].filter(Boolean));
+const adminOrigin = process.env.HAKU_ADMIN_ORIGIN?.trim() || '';
+let adminOriginUrl = null;
+if (adminOrigin) {
+  try { adminOriginUrl = new URL(adminOrigin); } catch { throw new Error('HAKU_ADMIN_ORIGIN must be a valid origin URL'); }
+  if (!['http:', 'https:'].includes(adminOriginUrl.protocol) || adminOriginUrl.origin !== adminOrigin) throw new Error('HAKU_ADMIN_ORIGIN must not include a path, query, or fragment');
+  if (process.env.NODE_ENV === 'production' && adminOriginUrl.protocol !== 'https:') throw new Error('Production HAKU_ADMIN_ORIGIN must use HTTPS');
+}
+const allowedOrigins = new Set([publicOrigin, adminOrigin, ...(process.env.HAKU_ALLOWED_ORIGINS || '').split(',').map((origin) => origin.trim())].filter(Boolean));
 const telegramApiBase = (process.env.HAKU_TELEGRAM_API_BASE || 'https://api.telegram.org').replace(/\/+$/, '');
 const secureCookie = process.env.NODE_ENV === 'production' || cookieSameSite === 'none';
 const trustProxy = process.env.HAKU_TRUSTED_PROXY === 'true';
@@ -294,18 +301,21 @@ function issueSession(res, { type, telegramId = null, botId = null, adminId = nu
   const value = `${id}.${signature(id)}`;
   const maxAge = type === 'admin' ? 8 * 60 * 60 : 12 * 60 * 60;
   const sameSite = cookieSameSite[0].toUpperCase() + cookieSameSite.slice(1);
-  res.setHeader('Set-Cookie', `haku_session=${value}; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=${maxAge}${secureCookie ? '; Secure' : ''}`);
+  const cookieName = type === 'admin' ? 'haku_admin_session' : 'haku_session';
+  res.setHeader('Set-Cookie', `${cookieName}=${value}; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=${maxAge}${secureCookie ? '; Secure' : ''}`);
   return csrf;
 }
 
-function clearSession(res, req) {
-  const current = getSession(req);
+function clearSession(res, req, type = 'user') {
+  const current = getSession(req, type);
   if (current) sessions.delete(current.id);
-  res.setHeader('Set-Cookie', `haku_session=; Path=/; HttpOnly; SameSite=${cookieSameSite}; Max-Age=0${secureCookie ? '; Secure' : ''}`);
+  const cookieName = type === 'admin' ? 'haku_admin_session' : 'haku_session';
+  res.setHeader('Set-Cookie', `${cookieName}=; Path=/; HttpOnly; SameSite=${cookieSameSite}; Max-Age=0${secureCookie ? '; Secure' : ''}`);
 }
 
-function getSession(req) {
-  const value = parseCookies(req.headers.cookie).haku_session;
+function getSession(req, type = 'user') {
+  const cookieName = type === 'admin' ? 'haku_admin_session' : 'haku_session';
+  const value = parseCookies(req.headers.cookie)[cookieName];
   if (!value) return null;
   const dot = value.lastIndexOf('.');
   if (dot < 1) return null;
@@ -313,7 +323,7 @@ function getSession(req) {
   const mac = value.slice(dot + 1);
   if (!safeEqual(mac, signature(id))) return null;
   const session = sessions.get(id);
-  if (!session || session.expiresAt < Date.now()) { sessions.delete(id); return null; }
+  if (!session || session.type !== type || session.expiresAt < Date.now()) { sessions.delete(id); return null; }
   return { id, ...session };
 }
 
@@ -448,7 +458,7 @@ function verifyInitData(initData) {
 }
 
 function requireAdmin(req, res) {
-  const session = getSession(req);
+  const session = getSession(req, 'admin');
   if (!session || session.type !== 'admin') { json(res, 401, { error: 'admin_session_required' }); return null; }
   return session;
 }
@@ -523,10 +533,13 @@ function overview() {
 const server = createServer(async (req, res) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  if (!setCors(req, res)) return json(res, 403, { error: 'origin_not_allowed' });
-  if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
   const url = new URL(req.url || '/', 'http://localhost');
   const path = url.pathname;
+  if (adminOriginUrl && path.startsWith('/api/admin/') && String(req.headers.host || '').toLowerCase() !== adminOriginUrl.host.toLowerCase()) {
+    return json(res, 404, { error: 'not_found' });
+  }
+  if (!setCors(req, res)) return json(res, 403, { error: 'origin_not_allowed' });
+  if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
 
   if (path.startsWith('/api/admin/') && !['GET', 'HEAD'].includes(req.method) &&
       path !== '/api/admin/login' && path !== '/api/admin/logout') {
@@ -537,7 +550,17 @@ const server = createServer(async (req, res) => {
   }
 
   try {
-    if (path === '/api/health' && req.method === 'GET') return json(res, 200, { ok: true });
+    if (path === '/api/health' && ['GET', 'HEAD'].includes(req.method)) return json(res, 200, { ok: true });
+
+    const assetRoute = path.match(/^\/assets\/([a-z0-9-]+\.(?:webp|png))$/);
+    if (assetRoute && ['GET', 'HEAD'].includes(req.method)) {
+      let asset;
+      try { asset = readFileSync(resolve(ROOT, 'public', 'assets', assetRoute[1])); }
+      catch { return json(res, 404, { error: 'not_found' }); }
+      const contentType = assetRoute[1].endsWith('.webp') ? 'image/webp' : 'image/png';
+      res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'public, max-age=604800' });
+      return res.end(req.method === 'HEAD' ? undefined : asset);
+    }
 
     const webhookRoute = path.match(/^\/api\/telegram\/webhook\/([a-zA-Z0-9_-]{2,64})$/);
     if (webhookRoute && req.method === 'POST') {
@@ -611,6 +634,10 @@ const server = createServer(async (req, res) => {
       return json(res, 200, { deleted: true });
     }
 
+    if (path === '/api/admin/session' && req.method === 'GET') {
+      return json(res, 200, { authenticated: Boolean(getSession(req, 'admin')) });
+    }
+
     if (path === '/api/admin/login' && req.method === 'POST') {
       if (!rateLimit(req, 'admin-login', ADMIN_LOGIN_MAX_ATTEMPTS)) {
         // Record only the first blocked attempt per address and window so a flood cannot grow audit_log.
@@ -654,7 +681,7 @@ const server = createServer(async (req, res) => {
       if (!session) return;
       if (!csrfValid(req, session)) return json(res, 403, { error: 'csrf_invalid' });
       writeAudit(session.adminId, 'admin_logout', session.username, clientIp(req));
-      clearSession(res, req);
+      clearSession(res, req, 'admin');
       return json(res, 200, { loggedOut: true });
     }
 
