@@ -6,7 +6,7 @@ The project now includes a small Node.js API server, SQLite account storage, Tel
 
 1. Use Node.js 25.7 or newer. This prototype uses Node's built-in `node:sqlite` API and does not install npm packages.
 2. Copy `.env.example` to `.env`.
-3. Replace the example Bot tokens, admin password, and session secret. Configure every Bot that may open the Mini App in `HAKU_BOTS_JSON`. Keep `.env` private.
+3. Replace the example Bot tokens and session secret. Configure every Bot that may open the Mini App in `HAKU_BOTS_JSON`. Keep `.env` private. `HAKU_ADMIN_PASSWORD` is only for one-time migration from the old shared-password login.
 4. Set `HAKU_PUBLIC_ORIGIN` and `HAKU_ALLOWED_ORIGINS` to the exact URL used to open the app.
 5. Run `npm start`, then open the printed local address.
 
@@ -16,7 +16,7 @@ The Bot configuration is server-only. Each Telegram `initData` signature is chec
 
 Telegram IDs are saved only after the user agrees and the server accepts `POST /api/telegram/consent`. The account record contains Telegram ID, locale, source Bot ID, first/last-seen timestamps, consent time, and consent version. `last_seen` is refreshed when a saved user is verified again. Records are deleted when `last_seen` is older than `HAKU_RETENTION_DAYS` (default: 365 days); cleanup runs at startup and every 24 hours. Users can download a JSON copy or delete their saved account from the Telegram account card. Birth details, relationship answers, manga feedback, Telegram names, and usernames are not saved.
 
-The admin route requires the password configured in `HAKU_ADMIN_PASSWORD`. It shows live values only after a valid admin session; when opening the HTML file without the API, the UI shows clearly labeled sample data.
+The admin route uses named `owner` and `viewer` accounts. Only owners can perform write operations; viewers can read the overview. Create accounts with `node server.mjs create-admin <username> <owner|viewer>`.
 
 ## Docker deployment on mini.truesignal.cc
 
@@ -46,7 +46,8 @@ The admin route requires the password configured in `HAKU_ADMIN_PASSWORD`. It sh
    HAKU_DB_PATH=/var/lib/haku/haku.sqlite
    HAKU_RETENTION_DAYS=365
    HAKU_SESSION_SECRET=<GENERATE_A_LONG_RANDOM_SECRET>
-   HAKU_ADMIN_PASSWORD=<SET_A_STRONG_PASSWORD>
+   # Optional: old shared admin password, only while migrating an empty admins table.
+   # HAKU_ADMIN_PASSWORD=<OLD_SHARED_PASSWORD>
    HAKU_BOTS_JSON=[{"id":"<BOT_ID>","name":"<BOT_NAME>","token":"<BOT_TOKEN>","active":true}]
    ~~~
 
@@ -71,6 +72,16 @@ The admin route requires the password configured in `HAKU_ADMIN_PASSWORD`. It sh
    ~~~
 
 7. In BotFather, set the Bot's Mini App URL (and menu button URL, if used) to https://mini.truesignal.cc.
+
+### Create and migrate admin accounts
+
+For a new installation, after Haku is running create the first owner. The command prompts for a password through hidden standard input; do not put the password in command arguments:
+
+~~~sh
+docker compose -f deploy/compose.yml exec haku node server.mjs create-admin owner owner
+~~~
+
+To migrate an existing installation that used `HAKU_ADMIN_PASSWORD`, keep the old value in `.env` only while the `admins` table is empty. Sign in once with username `owner` and that old password. A successful first login creates the named owner account with a salted scrypt hash. Then remove `HAKU_ADMIN_PASSWORD` from `.env` and restart the service. The legacy password is accepted only while the table is empty and is ignored after a named account exists. Create more accounts through the same command, choosing `owner` or `viewer` as the role.
 
 ### Register Bot webhooks and profile copy
 
