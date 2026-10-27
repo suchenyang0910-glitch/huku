@@ -34,7 +34,7 @@ The fallback dark palette follows the forest identity: page `#16231f`, surface `
 
 ## Layout
 
-The Mini App moves from a full-width illustrated cover into five short questions, a single-panel comic reader, and a small feedback close. On phones the cover illustration returns to document flow above the consent control, while the comic occupies most of the available width and uses explicit previous/next controls as well as swipe. Telegram account state is summarized by the compact header entry and managed on My account (`#/me`), so it does not interrupt the reading. The operator view uses a compact navigation rail, four summary metrics, a seven-day activity chart, a searchable account table, and a Bot availability panel.
+The Mini App moves from a full-width illustrated cover into five short questions, a single-panel comic reader, and a small feedback close. On phones the primary reading action sits directly below the cover copy, the optional account-saving control follows it, and the cover illustration remains in document flow below both. The compact language menu and account entry share one header row. The comic occupies most of the available width and uses explicit previous/next controls as well as swipe. Telegram account state is summarized by the compact header entry and managed on My account (`#/me`), so it does not interrupt the reading. The operator view uses a compact navigation rail, four summary metrics, a seven-day activity chart, a searchable account table, and a Bot availability panel.
 
 ## Elevation & Depth
 
@@ -47,13 +47,15 @@ Use rounded rectangles (9–18px) for cards and controls. The avatar and moon us
 ## Components
 
 - Primary action: forest fill, white text, clear verb.
-- Account consent: the explicit checkbox is selected by default and describes the exact fields retained. Loading or verifying never saves; only the Continue action saves while the checkbox remains selected.
+- Account consent: verified, unsaved users see an explicit checkbox selected by default below the cover action. Loading or verifying never saves; only activating Begin the story saves while the checkbox remains selected. A failed save is reported but never blocks reading.
+- Language menu: use the authored compact header menu so every user, including people outside Telegram, can change locale before reading. On phones the trigger shows only the locale abbreviation; the popup keeps the full language names and keyboard operation.
 - Identity: always distinguish Telegram's client-side user data from a server-verified identity.
 - Account entry: show only when Telegram user data is available on the Mini App host. Use a photo with an initials fallback, hide text at narrow widths, and encode unverified, verified, and saved states in both the status label and dot treatment.
 - Account navigation: `#/me` is a real history entry when opened from the header. Browser Back and Telegram BackButton return home; a direct `#/me` visit uses an in-page back action that replaces the hash.
 - Account deletion: use the app-owned confirmation dialog, keep focus inside it, and restore focus to the trigger after cancel or completion.
 - Comic reading: one panel per step, short captions, persistent page count, explicit next/back controls, keyboard arrows, and touch swipe.
 - Telegram navigation: use the native BackButton only with nonempty `initData` and a client version that supports it; show it in My account, during questions, comic pages, and feedback, and hide it on the cover and admin view. Its action matches the in-page back action.
+- Telegram primary action: use MainButton only with nonempty `initData` and an available native API. Show it on the home cover, keep its localized label aligned with the in-page Begin the story action, and hide it everywhere else.
 - Page turns: use `HapticFeedback.selectionChanged()` when available, for buttons, page dots, keyboard navigation, and swipe. Do not require haptics for the reader to work.
 - Accessibility: give the unknown-time checkbox and feedback options explicit names using their localized labels. When a user row has no name, show the Telegram ID once.
 - Reading answers: keep in current-page memory only; never persist them with account data.

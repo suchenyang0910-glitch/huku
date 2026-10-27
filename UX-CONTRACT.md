@@ -12,12 +12,12 @@ Haku is a Telegram Mini App for a quiet, illustrated self-reflection reading. Th
 | My account | `/#/me` | Verified Telegram user's header entry or direct URL | In-page Back, browser Back, Telegram BackButton |
 | Admin | Admin host | Direct URL | Admin logout |
 
-My account owns identity display, verification/saved status, Telegram ID copy, privacy details, account export, save, and delete. Home owns the default-selected Save account control; a saved user sees neither that control nor Continue with Telegram.
+My account owns identity display, verification/saved status, Telegram ID copy, privacy details, account export, save, and delete. Home owns the Begin the story action. A verified, unsaved user also sees the default-selected Save account control below it; saved, unverified, and non-Telegram users do not.
 
 ## Consent and mutation states
 
 - Loading or verifying a Telegram session never creates an account record.
-- Continue with Telegram calls the consent endpoint only while Save account remains selected. Clearing it results in no write.
+- Begin the story calls the consent endpoint exactly once only for a verified, unsaved user while Save account remains selected. Clearing it results in no write. A failed save shows an error and still opens the questionnaire.
 - Save account is available to verified, unsaved users in My account.
 - Account deletion uses the localized app dialog, traps focus, disables the destructive action while pending, keeps failures in context, and restores focus on close.
 - Export and delete are available only for a verified, saved account.
@@ -34,6 +34,7 @@ The header entry is rendered only on the Mini App host when Telegram user inform
 
 ## Responsive acceptance
 
-- At 1440px, the hero copy and consent occupy the left side and the complete fox-and-lantern illustration occupies the right without overlap.
-- At 360px, the illustration is in document flow above consent, the header entry shows only avatar and status, and no surface scrolls horizontally.
+- At 1440px, the hero copy, primary action, and optional consent occupy the left side and the complete fox-and-lantern illustration occupies the right without overlap.
+- At 390×750 and 360×640, the primary action is visible without scrolling. The optional consent is also fully visible at 390×750; at 360×640 the primary action remains the hard minimum. The illustration follows the controls in document flow, the header stays on one row, the account entry shows only avatar and status, and no surface scrolls horizontally.
 - Browser Back and Telegram BackButton return from My account to home, including a safe in-page return for a direct `/#/me` visit.
+- Telegram MainButton is shown only on home when signed Telegram context and the native API are available. It runs the same save-then-read action as the in-page button and follows locale changes.
