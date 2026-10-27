@@ -31,7 +31,7 @@ assert.match(html, /id="consent" type="checkbox" checked/, 'Save account is sele
 for (const locale of ['en', 'vi', 'zh', 'km', 'th']) {
   assert.ok(copy.T[locale].startConsentText, `T.${locale}.startConsentText is present`);
   assert.ok(copy.T[locale].languageMenuLabel, `T.${locale}.languageMenuLabel is present`);
-  for (const key of ['datePlaceholder', 'dateDialogTitle', 'dateYear', 'dateMonth', 'dateDay', 'dateCancel', 'dateConfirm']) {
+  for (const key of ['datePlaceholder', 'dateDialogTitle', 'dateYear', 'dateMonth', 'dateDay', 'dateCancel', 'dateConfirm', 'timePlaceholder', 'timeDialogTitle', 'timeHour', 'timeMinute']) {
     assert.ok(copy.T[locale][key], `T.${locale}.${key} is present`);
   }
 }
@@ -45,8 +45,12 @@ assert.equal((html.match(/\/api\/telegram\/consent/g) || []).length, 1,
   'the explicit save action is the only client path to the consent endpoint');
 assert.doesNotMatch(html, /\bconfirm\s*\(/, 'account deletion uses the app dialog instead of native confirm');
 assert.doesNotMatch(html, /id="answer-date"[^>]+type="date"/, 'birth date no longer uses the native date input');
-assert.match(html, /id="date-dialog"[\s\S]{0,100}role="dialog" aria-modal="true"/, 'birth-date picker is a modal dialog');
-assert.equal((html.match(/data-wheel="(?:year|month|day)" role="listbox"/g) || []).length, 3, 'birth-date picker has three listboxes');
-assert.match(html, /function telegramBack\(\)\{if\(!\$\('#date-dialog'\)\.hidden\)\{closeDateDialog\(\);return\}/, 'Telegram BackButton closes the birth-date picker first');
+assert.doesNotMatch(html, /id="answer-time"[^>]+type="time"/, 'birth time no longer uses the native time input');
+assert.match(html, /id="wheel-dialog"[\s\S]{0,160}role="dialog" aria-modal="true"/, 'the shared wheel picker is a modal dialog');
+assert.match(html, /date:\{columns:\['year','month','day'\]/, 'birth-date picker configures three columns');
+assert.match(html, /time:\{columns:\['hour','minute'\]/, 'birth-time picker configures two columns');
+assert.match(html, /function telegramBack\(\)\{if\(!\$\('#wheel-dialog'\)\.hidden\)\{closeWheelDialog\(\);return\}/, 'Telegram BackButton closes the shared wheel picker first');
+assert.doesNotMatch(html, /addEventListener\('change',renderQuestion\)/, 'ordinary questionnaire fields do not redraw the whole question on change');
+assert.match(html, /commit\(draft,trigger\)\{answers\.time=[\s\S]{0,240}updateTimeZoneNotice\(\)/, 'time Confirm updates the existing trigger and zone notice locally');
 
 console.log('locales.test.mjs: all locale key sets and account UI invariants pass.');
