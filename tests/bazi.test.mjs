@@ -35,7 +35,7 @@ let localeSource = html.slice(html.indexOf("const T ="), html.indexOf("const $="
 localeSource = localeSource.replace("const T =", "globalThis.T =").replace("const F=", "globalThis.F=").replace("const A=", "globalThis.A=");
 const localeCopy = {};
 vm.runInNewContext(localeSource, localeCopy);
-const timeResolutionText = extractFunction("timeResolutionText", "startReading");
+const timeResolutionText = extractFunction("timeResolutionText", "updateTimeZoneNotice");
 
 function elementFacts(pillars) {
   const counts = Object.fromEntries(elements.map(key => [key, 0]));
