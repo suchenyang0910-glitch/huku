@@ -50,7 +50,8 @@ for (const bot of bots) {
 }
 
 const apiBase = (process.env.HAKU_TELEGRAM_API_BASE || 'https://api.telegram.org').replace(/\/+$/, '');
-const activeBots = bots.filter((bot) => bot.active === true);
+// Match server.mjs: a Bot is active unless it is explicitly disabled.
+const activeBots = bots.filter((bot) => bot.active !== false);
 let failed = false;
 
 function webhookSecret(botId) {

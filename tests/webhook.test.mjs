@@ -202,6 +202,16 @@ try {
   assert.equal(Object.values(tokens).some((token) => dryRun.stdout.includes(token) || dryRun.stderr.includes(token)), false, 'dry-run output contains no tokens');
   assert.equal(received.length, beforeDryRun, 'dry-run sends no Telegram API requests');
 
+  const implicitDryRun = spawnSync(process.execPath, [join(ROOT, 'scripts', 'set-webhook.mjs'), '--dry-run'], {
+    cwd: ROOT,
+    env: { ...childEnv, HAKU_BOTS_JSON: JSON.stringify([{ id: 'bot-implicit', name: 'Haku Implicit', token: tokens['bot-main'] }, bots[2]]) },
+    encoding: 'utf8'
+  });
+  assert.equal(implicitDryRun.status, 0, 'implicit-active dry-run exits successfully: ' + implicitDryRun.stderr);
+  assert.ok(implicitDryRun.stdout.includes('https://mini.example.test/api/telegram/webhook/bot-implicit'),
+    'a Bot without an active field is registered, matching the server');
+  assert.equal(implicitDryRun.stdout.includes('bot-paused'), false, 'active:false Bots are still skipped');
+
   console.log('webhook.test.mjs: all assertions passed');
 } finally {
   if (serverProcess && serverProcess.exitCode === null) {
@@ -217,5 +227,3 @@ try {
     }
   }
 }
-
-

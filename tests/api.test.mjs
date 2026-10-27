@@ -291,10 +291,18 @@ try {
     limited = attempt.status === 429;
   }
   assert.equal(limited, true, 'admin login attempts remain rate limited');
+  for (let i = 0; i < 5; i++) {
+    const blocked = await request('/api/admin/login', {
+      method: 'POST', body: { username: 'owner', password: 'still-incorrect-' + i }
+    });
+    assert.equal(blocked.status, 429);
+  }
 
   const auditDb = new DatabaseSync(dbPath);
   const auditActions = auditDb.prepare('SELECT action, admin_id, target FROM audit_log').all();
   auditDb.close();
+  assert.equal(auditActions.filter((entry) => entry.action === 'admin_login_rate_limited').length, 1,
+    'repeated rate-limited logins write a single audit record per window');
   assert.ok(auditActions.some((entry) => entry.action === 'admin_login_success' && entry.admin_id));
   assert.ok(auditActions.some((entry) => entry.action === 'admin_login_failed'));
   assert.ok(auditActions.some((entry) => entry.action === 'admin_logout' && entry.admin_id));

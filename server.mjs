@@ -210,6 +210,7 @@ webhookRateCleanup.unref();
 const SESSION_MS = 12 * 60 * 60 * 1000;
 const ADMIN_SESSION_MS = 8 * 60 * 60 * 1000;
 const RATE_WINDOW_MS = 15 * 60 * 1000;
+const ADMIN_LOGIN_MAX_ATTEMPTS = 8;
 const stateCleanup = setInterval(() => {
   const now = Date.now();
   for (const [id, session] of sessions) if (session.expiresAt <= now) sessions.delete(id);
@@ -361,6 +362,10 @@ function rateLimit(req, key, maximum, windowMs = RATE_WINDOW_MS) {
   if (!bucket || bucket.resetAt <= now) { attempts.set(bucketKey, { count: 1, resetAt: now + windowMs }); return true; }
   bucket.count += 1;
   return bucket.count <= maximum;
+}
+
+function rateLimitCount(req, key) {
+  return attempts.get(`${key}:${clientIp(req)}`)?.count || 0;
 }
 
 function csrfValid(req, session) {
@@ -607,8 +612,11 @@ const server = createServer(async (req, res) => {
     }
 
     if (path === '/api/admin/login' && req.method === 'POST') {
-      if (!rateLimit(req, 'admin-login', 8)) {
-        writeAudit(null, 'admin_login_failed', null, clientIp(req));
+      if (!rateLimit(req, 'admin-login', ADMIN_LOGIN_MAX_ATTEMPTS)) {
+        // Record only the first blocked attempt per address and window so a flood cannot grow audit_log.
+        if (rateLimitCount(req, 'admin-login') === ADMIN_LOGIN_MAX_ATTEMPTS + 1) {
+          writeAudit(null, 'admin_login_rate_limited', null, clientIp(req));
+        }
         return json(res, 429, { error: 'rate_limited' });
       }
       const body = await readJson(req, 4096);
