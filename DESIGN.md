@@ -54,6 +54,7 @@ Use rounded rectangles (9–18px) for cards and controls. The avatar and moon us
 - Page turns: use `HapticFeedback.selectionChanged()` when available, for buttons, page dots, keyboard navigation, and swipe. Do not require haptics for the reader to work.
 - Accessibility: give the unknown-time checkbox and feedback options explicit names using their localized labels. When a user row has no name, show the Telegram ID once.
 - Reading answers: keep in current-page memory only; never persist them with account data.
+- Five-element ties: show every tied strongest or weakest element. Page 6 still needs one action; when weakest elements tie, choose by their relationship to the day master in this fixed order: generates me (生我), same as me (同我), I generate (我生), I control (我克), controls me (克我).
 - Operator data: use sample labels when disconnected; live data requires an authenticated admin API.
 - Bot availability: status is informational in live mode; sample toggles only affect local demo state.
 
