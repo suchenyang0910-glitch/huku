@@ -14,14 +14,9 @@ The Bot configuration is server-only. Each Telegram `initData` signature is chec
 
 ## What gets saved
 
-Telegram IDs are persisted only after the user checks the account-consent box and the server accepts `POST /api/telegram/consent`. The SQLite record stores Telegram ID, locale, source Bot ID, first/last-seen time, and consent time/version. Birth details, relationship answers, manga feedback, Telegram names, and usernames are not stored by this server.
+Telegram IDs are saved only after the user agrees and the server accepts `POST /api/telegram/consent`. The account record contains Telegram ID, locale, source Bot ID, first/last-seen timestamps, consent time, and consent version. `last_seen` is refreshed when a saved user is verified again. Records are deleted when `last_seen` is older than `HAKU_RETENTION_DAYS` (default: 365 days); cleanup runs at startup and every 24 hours. Users can download a JSON copy or delete their saved account from the Telegram account card. Birth details, relationship answers, manga feedback, Telegram names, and usernames are not saved.
 
-The admin route requires the password configured in `HAKU_ADMIN_PASSWORD`.
-
-## Telegram Bot welcome webhook
-
-After every deployment, and whenever you add an active Bot to `HAKU_BOTS_JSON`, run `node scripts/set-webhook.mjs` on the server. Use `node scripts/set-webhook.mjs --dry-run` to preview the operations first. Registration requires an HTTPS `HAKU_PUBLIC_ORIGIN` and configures the webhook, Mini App menu button, and localized Bot profile copy. Keep Bot tokens in the server's `.env` or secret store; the script never prints tokens or webhook secrets. If a reverse proxy allowlists paths, permit `/api/telegram/webhook/`.
- It shows live values only after a valid admin session; when opening the HTML file without the API, the UI shows clearly labeled sample data.
+The admin route requires the password configured in `HAKU_ADMIN_PASSWORD`. It shows live values only after a valid admin session; when opening the HTML file without the API, the UI shows clearly labeled sample data.
 
 ## Docker deployment on mini.truesignal.cc
 
@@ -49,6 +44,7 @@ After every deployment, and whenever you add an active Bot to `HAKU_BOTS_JSON`, 
    HAKU_ALLOWED_ORIGINS=https://mini.truesignal.cc
    HAKU_TRUSTED_PROXY=true
    HAKU_DB_PATH=/var/lib/haku/haku.sqlite
+   HAKU_RETENTION_DAYS=365
    HAKU_SESSION_SECRET=<GENERATE_A_LONG_RANDOM_SECRET>
    HAKU_ADMIN_PASSWORD=<SET_A_STRONG_PASSWORD>
    HAKU_BOTS_JSON=[{"id":"<BOT_ID>","name":"<BOT_NAME>","token":"<BOT_TOKEN>","active":true}]
@@ -75,6 +71,17 @@ After every deployment, and whenever you add an active Bot to `HAKU_BOTS_JSON`, 
    ~~~
 
 7. In BotFather, set the Bot's Mini App URL (and menu button URL, if used) to https://mini.truesignal.cc.
+
+### Register Bot webhooks and profile copy
+
+After every deployment, and whenever you add an active Bot to `HAKU_BOTS_JSON`, run the registration script on the server:
+
+```sh
+node scripts/set-webhook.mjs --dry-run
+node scripts/set-webhook.mjs
+```
+
+The script requires `HAKU_PUBLIC_ORIGIN` to use HTTPS. It registers the webhook, Mini App menu button, and localized Bot profile copy. Keep Bot tokens in the server's `.env` or secret store; the script does not print tokens or webhook secrets. The Nginx example forwards all paths to Node. If your reverse proxy has an allowlist, permit `/api/telegram/webhook/`.
 
 ### Cookie compatibility
 
@@ -116,4 +123,4 @@ After health and both domains are verified, retain the previous image or commit 
 - Put the server behind HTTPS before production and set `NODE_ENV=production` so session cookies are marked `Secure`.
 - If the server sits behind a reverse proxy, set `HAKU_TRUSTED_PROXY=true` only when direct access to the Node port is blocked and the proxy overwrites/appends `X-Forwarded-For` correctly. Otherwise the login rate limiter will key off the proxy address.
 - `node:sqlite` is still marked release-candidate in the Node 25 documentation. Pin and qualify the runtime before production upgrades.
-- Configure an account retention/deletion policy before launch. No delete/export endpoint is included yet.
+- `HAKU_RETENTION_DAYS` defaults to 365. It controls automatic cleanup based on `last_seen`; users can also export or delete their account from the account card.
