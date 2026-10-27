@@ -30,7 +30,7 @@ The admin API uses named accounts and a signed, `HttpOnly` session cookie. Passw
 
 Request: `{ "username": "...", "password": "..." }`. On success, sets the admin session cookie and returns `{ "authenticated": true, "csrfToken": "...", "admin": { "id": "...", "username": "...", "role": "owner|viewer" } }`. Neither password nor password hash is returned by any API.
 
-Create an account with `node server.mjs create-admin <username> <owner|viewer>`. The password is read from standard input, not command-line arguments or logs. Usernames are 3–32 characters and may contain letters, digits, `.`, `_`, and `-`.
+Create an account with `node server.mjs create-admin <username> <owner|viewer>`. The password is read from standard input, not command-line arguments or logs. Usernames are 3�C32 characters and may contain letters, digits, `.`, `_`, and `-`.
 
 For migration from the previous shared-password setup, `HAKU_ADMIN_PASSWORD` is accepted only when the `admins` table is empty and the submitted username is `owner`. A successful login creates a salted scrypt owner account. Remove the legacy environment variable after that first login. When any named account exists, the legacy password is ignored.
 
@@ -75,7 +75,13 @@ The handler acknowledges updates with `200 {"ok":true}` and processes them async
 
 The webhook only sends the fixed localized welcome copy and an Open Haku button. It does not store or log message content, Telegram user IDs, usernames, or chat IDs, and it creates no account record. The de-duplication and rate-limit state is in memory and is cleared when the process restarts. Telegram API failures are logged with the Bot ID and error type only.
 
-Register active Bots after each deployment or when adding a Bot with `node scripts/set-webhook.mjs` (use `--dry-run` to preview). The script also configures the menu button and localized Bot profile copy. `HAKU_TELEGRAM_API_BASE` defaults to `https://api.telegram.org` and usually does not need to be changed. The deployment proxy example forwards all routes; if a proxy allowlists paths, allow `/api/telegram/webhook/`.
+Register active Bots after each deployment or when adding a Bot with `node scripts/set-webhook.mjs` (use `--dry-run` to preview). The script also configures the menu button and localized Bot profile copy. `HAKU_TELEGRAM_API_BASE` defaults to `https://api.telegram.org` and usually does not need to be changed. The deployment Caddy example forwards all routes; if a proxy allowlists paths, allow `/api/telegram/webhook/`.
+
+### Reverse proxy client IP
+
+When `HAKU_TRUSTED_PROXY=true`, the server uses the last IP in `X-Forwarded-For` for admin login rate limiting and audit records. The proxy must replace the incoming header with exactly one verified visitor IP. With Cloudflare, configure Caddy to trust only Cloudflare's published IPv4/IPv6 ranges, read `CF-Connecting-IP` as the client IP header, and send `X-Forwarded-For: {client_ip}` upstream. Never trust a visitor-supplied `X-Forwarded-For` value or expose port 4173 publicly.
+
+The public health endpoint supports unauthenticated `GET` and `HEAD` requests and returns status 200. If the currently deployed server responds with `UNAUTHENTICATED`, it is not running the expected handler version.
 
 ## Current storage and limits
 
@@ -90,3 +96,4 @@ Register active Bots after each deployment or when adding a Bot with `node scrip
 - Bind each user session to its verified Telegram user ID and the approved Bot entry route. Bot selection for outbound messages must consider the user's prior start/consent state and Telegram delivery errors.
 - A user generally needs to start a Bot before it can message them. Moving traffic between Bots cannot guarantee that a user is reachable on the backup Bot.
 - Use health checks, rate limits, retry queues, and clear service status for resilience. Do not rotate Bots to bypass a platform ban, spam restriction, or enforcement action; pause the affected route and resolve the platform issue.
+
