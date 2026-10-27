@@ -12,7 +12,7 @@ try {
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const TARGET = join(ROOT, 'haku.html');
 const FIRST_YEAR = 1930;
-const LAST_YEAR = new Date().getUTCFullYear() + 1;
+const LAST_YEAR = 2100;
 const TERMS = [
   [0, 285], [1, 315], [2, 345], [3, 15], [4, 45], [5, 75],
   [6, 105], [7, 135], [8, 165], [9, 195], [10, 225], [11, 255],

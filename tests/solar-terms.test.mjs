@@ -8,7 +8,7 @@ const baseYear = Number(match[1]), lastYear = Number(match[2]), start = Number(m
 const minutes = [start];
 for (let i=0,minute=start;i<encoded.length;i+=3) minutes.push(minute+=parseInt(encoded.slice(i,i+3),36));
 assert.equal(baseYear, 1930);
-assert.equal(lastYear, new Date().getUTCFullYear()+1);
+assert.equal(lastYear, 2100);
 assert.equal(minutes.length, (lastYear-baseYear+1)*12);
 
 const samples = [

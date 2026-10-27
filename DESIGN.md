@@ -55,7 +55,7 @@ Use rounded rectangles (9–18px) for cards and controls. The avatar and moon us
 - Accessibility: give the unknown-time checkbox and feedback options explicit names using their localized labels. When a user row has no name, show the Telegram ID once.
 - Reading answers: keep in current-page memory only; never persist them with account data.
 - Five-element ties: show every tied strongest or weakest element. Page 6 still needs one action; when weakest elements tie, choose by their relationship to the day master in this fixed order: generates me (生我), same as me (同我), I generate (我生), I control (我克), controls me (克我).
-- Historical birth times: resolve each birthplace through its IANA time zone. If a daylight-saving jump skipped the entered wall time, use the first valid local minute after the gap; if a repeated wall time is ambiguous, use its earlier occurrence. Show the rule in the questionnaire and reading whenever it applies.
+- Historical birth times: resolve each birthplace through its IANA time zone. Use the actual instant for solar-term boundaries, but subtract any daylight-saving offset before calculating the hour pillar and the 23:00 day rollover. If a daylight-saving jump skipped the entered wall time, use the first valid local minute after the gap; if a repeated wall time is ambiguous, use its earlier occurrence. Show the applied rule in the questionnaire and reading whenever it applies.
 - Operator data: use sample labels when disconnected; live data requires an authenticated admin API.
 - Bot availability: status is informational in live mode; sample toggles only affect local demo state.
 

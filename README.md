@@ -136,7 +136,7 @@ After health and both domains are verified, retain the previous image or commit 
 
 ### Solar-term table
 
-`haku.html` embeds the 12 month-defining solar terms for 1930 through the year after the current release. Regenerate the table with Astronomy Engine 2.1.19 (MIT license) as a build-only dependency; it is not used by the browser or server at runtime:
+`haku.html` embeds the 12 month-defining solar terms for 1930 through 2100. Birth years outside that fixed range fail explicitly instead of silently reusing the last known month. Regenerate the table with Astronomy Engine 2.1.19 (MIT license) as a build-only dependency; it is not used by the browser or server at runtime:
 
 ~~~sh
 npm install --no-save --ignore-scripts astronomy-engine@2.1.19

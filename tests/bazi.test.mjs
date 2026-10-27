@@ -14,13 +14,13 @@ const extractFunction = (name, nextName, context = {}) => {
 };
 const table = html.match(/SOLAR_TERM_BASE_YEAR=(\d+),SOLAR_TERM_LAST_YEAR=(\d+),SOLAR_TERM_START=(-?\d+),SOLAR_TERM_DELTAS='([0-9a-z]+)'/);
 assert.ok(table, "embedded solar-term table must exist");
-const SOLAR_TERM_BASE_YEAR = Number(table[1]), SOLAR_TERM_START = Number(table[3]), SOLAR_TERM_DELTAS = table[4];
+const SOLAR_TERM_BASE_YEAR = Number(table[1]), SOLAR_TERM_LAST_YEAR = Number(table[2]), SOLAR_TERM_START = Number(table[3]), SOLAR_TERM_DELTAS = table[4];
 const SOLAR_TERM_MINUTES = [SOLAR_TERM_START];
 for (let i=0,minute=SOLAR_TERM_START;i<SOLAR_TERM_DELTAS.length;i+=3) SOLAR_TERM_MINUTES.push(minute+=parseInt(SOLAR_TERM_DELTAS.slice(i,i+3),36));
 const solarTermState = extractFunction("solarTermState", "timeZoneParts", {SOLAR_TERM_MINUTES,SOLAR_TERM_BASE_YEAR});
 const timeZoneParts = extractFunction("timeZoneParts", "resolveLocalTime", {Intl,Date});
 const resolveLocalTime = extractFunction("resolveLocalTime", "fourPillars", {timeZoneParts,Intl,Date,RangeError});
-const fourPillars = extractFunction("fourPillars", "localTermOnDate", {solarTermState,resolveLocalTime});
+const fourPillars = extractFunction("fourPillars", "localTermOnDate", {solarTermState,resolveLocalTime,SOLAR_TERM_BASE_YEAR,SOLAR_TERM_LAST_YEAR});
 const stems = ["甲","乙","丙","丁","戊","己","庚","辛","壬","癸"];
 const branches = ["子","丑","寅","卯","辰","巳","午","未","申","酉","戌","亥"];
 const text = p => stems[p.stem] + branches[p.branch];
@@ -35,6 +35,7 @@ let localeSource = html.slice(html.indexOf("const T ="), html.indexOf("const $="
 localeSource = localeSource.replace("const T =", "globalThis.T =").replace("const F=", "globalThis.F=").replace("const A=", "globalThis.A=");
 const localeCopy = {};
 vm.runInNewContext(localeSource, localeCopy);
+const timeResolutionText = extractFunction("timeResolutionText", "startReading");
 
 function elementFacts(pillars) {
   const counts = Object.fromEntries(elements.map(key => [key, 0]));
@@ -58,12 +59,22 @@ assert.match(may1990Narrative.label, /金/);
 assert.equal(may1990Elements.weeklyElement, "wood");
 const may1990China = fourPillars(1990,5,15,12,0,"Asia/Shanghai",true);
 assert.equal(resolveLocalTime(1990,5,15,12,0,"Asia/Shanghai").offsetMinutes, 540);
+assert.equal(resolveLocalTime(1990,5,15,12,0,"Asia/Shanghai").daylightOffsetMinutes, 60);
+assert.equal(resolveLocalTime(1990,1,15,12,0,"Asia/Shanghai").daylightOffsetMinutes, 0);
 assert.deepEqual(["year","month","day","hour"].map(key=>text(may1990China[key])), ["庚午","辛巳","庚辰","壬午"]);
+assert.equal(text(fourPillars(1990,5,15,13,30,"Asia/Shanghai",true).hour), "壬午");
+const chinaBeforeStandardRollover = fourPillars(1990,5,15,22,30,"Asia/Shanghai",true);
+const chinaWallClockAfter23 = fourPillars(1990,5,15,23,30,"Asia/Shanghai",true);
+assert.equal(text(chinaWallClockAfter23.day), text(chinaBeforeStandardRollover.day), "23:30 daylight time is 22:30 standard time and must not roll the day");
+assert.equal(text(chinaWallClockAfter23.hour), "丁亥");
 const skippedChinaTime = resolveLocalTime(1990,4,15,2,30,"Asia/Shanghai");
 assert.deepEqual({status:skippedChinaTime.status,adjustedTime:skippedChinaTime.adjustedTime}, {status:"nonexistent",adjustedTime:"03:00"});
 assert.equal(resolveLocalTime(1990,9,16,1,30,"Asia/Shanghai").status, "ambiguous");
 assert.equal(resolveLocalTime(2024,3,10,2,30,"America/New_York").status, "nonexistent");
 assert.equal(resolveLocalTime(2024,11,3,1,30,"America/New_York").status, "ambiguous");
+assert.throws(()=>fourPillars(2101,1,1,12,0,"Asia/Shanghai",true), /outside the solar-term table range 1930-2100/);
+assert.equal(localeCopy.F.zh.story.daylightTimeNote, "夏令时期间的出生时间已换算为标准时间。");
+assert.match(timeResolutionText(resolveLocalTime(1990,5,15,13,30,"Asia/Shanghai"),localeCopy.F.zh.story), /夏令时期间的出生时间已换算为标准时间/);
 
 const balanced1930 = elementFacts(fourPillars(1930,1,1,4,0,7,true));
 assert.deepEqual(Array.from(balanced1930.strongest), ["fire","metal","water"]);
