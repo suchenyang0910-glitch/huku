@@ -45,6 +45,7 @@ The admin route uses named `owner` and `viewer` accounts. Only owners can perfor
    HAKU_TRUSTED_PROXY=true
    HAKU_DB_PATH=/var/lib/haku/haku.sqlite
    HAKU_RETENTION_DAYS=365
+   HAKU_STATS_TIMEZONE=Asia/Phnom_Penh
    HAKU_SESSION_SECRET=<GENERATE_A_LONG_RANDOM_SECRET>
    # Optional: old shared admin password, only while migrating an empty admins table.
    # HAKU_ADMIN_PASSWORD=<OLD_SHARED_PASSWORD>
@@ -135,3 +136,4 @@ After health and both domains are verified, retain the previous image or commit 
 - If the server sits behind a reverse proxy, set `HAKU_TRUSTED_PROXY=true` only when direct access to the Node port is blocked and the proxy overwrites/appends `X-Forwarded-For` correctly. Otherwise the login rate limiter will key off the proxy address.
 - `node:sqlite` is still marked release-candidate in the Node 25 documentation. Pin and qualify the runtime before production upgrades.
 - `HAKU_RETENTION_DAYS` defaults to 365. It controls automatic cleanup based on `last_seen`; users can also export or delete their account from the account card.
+- `HAKU_STATS_TIMEZONE` defaults to `Asia/Phnom_Penh`. Overview counts and `dailyDates` use seven natural days in this timezone; stored `first_seen` values remain UTC ISO timestamps. Set another valid IANA timezone when the admin dashboard should report a different local calendar.

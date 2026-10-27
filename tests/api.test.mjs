@@ -136,6 +136,7 @@ try {
     HAKU_DB_PATH: dbPath,
     HAKU_CONSENT_VERSION: consentVersion,
     HAKU_RETENTION_DAYS: '365',
+    HAKU_STATS_TIMEZONE: 'Asia/Phnom_Penh',
     HAKU_BOTS_JSON: JSON.stringify(bots)
   };
 
@@ -164,6 +165,8 @@ try {
 
   await startServer();
 
+  assert.equal((await request('/api/telegram/account', { cookie: 'haku_session=%E0%A4%A' })).status, 401,
+    'malformed percent-encoded cookies are ignored instead of causing a 500');
   assert.equal((await request('/api/telegram/account/delete', { method: 'POST' })).status, 401,
     'delete without a user session returns 401');
   assert.equal((await request('/api/telegram/account')).status, 401,
@@ -226,6 +229,29 @@ try {
   const overviewBefore = await request('/api/admin/overview', { cookie: adminCookie });
   assert.equal(overviewBefore.status, 200);
   assert.ok(overviewBefore.body.users.some((user) => user.id === userId), 'saved user appears in overview before deletion');
+
+  const utcDay = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const utc1730 = `${utcDay}T17:30:00.000Z`;
+  const phnomPenhDay = new Date(Date.parse(utc1730) + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const statsUserId = String(900000000 + randomBytes(4).readUInt32BE(0));
+  const statsDb = new DatabaseSync(dbPath);
+  statsDb.prepare(`INSERT INTO users (telegram_id, locale, source_bot_id, first_seen, last_seen, consent_at, consent_version)
+    VALUES (?, 'en', 'bot-test', ?, ?, ?, ?)`)
+    .run(statsUserId, utc1730, utc1730, utc1730, consentVersion);
+  statsDb.close();
+  const timezoneStats = await request('/api/admin/overview', { cookie: adminCookie });
+  assert.equal(timezoneStats.status, 200);
+  assert.equal(timezoneStats.body.metrics.newUsers7d, overviewBefore.body.metrics.newUsers7d + 1,
+    'UTC 17:30 record is included in the Phnom Penh seven-day count');
+  const phnomPenhIndex = timezoneStats.body.dailyDates.indexOf(phnomPenhDay);
+  assert.notEqual(phnomPenhIndex, -1, 'dailyDates uses the Phnom Penh local date');
+  assert.equal(timezoneStats.body.dailyNewUsers[phnomPenhIndex], overviewBefore.body.dailyNewUsers[phnomPenhIndex] + 1,
+    'UTC 17:30 is counted on the Phnom Penh calendar day (00:30)');
+  const utcDayIndex = timezoneStats.body.dailyDates.indexOf(utcDay);
+  if (utcDayIndex !== -1 && utcDayIndex !== phnomPenhIndex) {
+    assert.equal(timezoneStats.body.dailyNewUsers[utcDayIndex], overviewBefore.body.dailyNewUsers[utcDayIndex],
+      'the same user is not assigned to the UTC calendar day');
+  }
 
   const deleted = await request('/api/telegram/account/delete', {
     method: 'POST', cookie: userSession.cookie, csrf: userSession.csrf

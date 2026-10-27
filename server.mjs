@@ -149,6 +149,21 @@ const dummyAdminPasswordHash = hashAdminPassword(randomBytes(32).toString('base6
 const consentVersion = required('HAKU_CONSENT_VERSION', 1);
 const retentionDays = Number(process.env.HAKU_RETENTION_DAYS || 365);
 if (!Number.isSafeInteger(retentionDays) || retentionDays < 1) throw new Error('HAKU_RETENTION_DAYS must be a positive whole number');
+const statsTimezone = (process.env.HAKU_STATS_TIMEZONE || 'Asia/Phnom_Penh').trim();
+let statsDateFormatter;
+let statsDateTimeFormatter;
+try {
+  statsDateFormatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: statsTimezone, calendar: 'gregory', numberingSystem: 'latn',
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  });
+  statsDateTimeFormatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: statsTimezone, calendar: 'gregory', numberingSystem: 'latn',
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+  });
+} catch {
+  throw new Error('HAKU_STATS_TIMEZONE must be a valid IANA timezone');
+}
 const maxAuthAge = Math.max(60, Math.min(Number(process.env.HAKU_MAX_AUTH_AGE_SECONDS) || 600, 3600));
 const cookieSameSite = (process.env.HAKU_COOKIE_SAMESITE || 'lax').toLowerCase();
 if (!['lax', 'strict', 'none'].includes(cookieSameSite)) throw new Error('HAKU_COOKIE_SAMESITE must be lax, strict, or none');
@@ -195,6 +210,12 @@ webhookRateCleanup.unref();
 const SESSION_MS = 12 * 60 * 60 * 1000;
 const ADMIN_SESSION_MS = 8 * 60 * 60 * 1000;
 const RATE_WINDOW_MS = 15 * 60 * 1000;
+const stateCleanup = setInterval(() => {
+  const now = Date.now();
+  for (const [id, session] of sessions) if (session.expiresAt <= now) sessions.delete(id);
+  for (const [key, attempt] of attempts) if (attempt.resetAt <= now) attempts.delete(key);
+}, 10 * 60 * 1000);
+stateCleanup.unref();
 
 const databasePath = resolve(ROOT, process.env.HAKU_DB_PATH || './data/haku.sqlite');
 mkdirSync(dirname(databasePath), { recursive: true });
@@ -256,7 +277,10 @@ function parseCookies(header = '') {
   const out = Object.create(null);
   for (const part of header.split(';')) {
     const index = part.indexOf('=');
-    if (index > 0) out[part.slice(0, index).trim()] = decodeURIComponent(part.slice(index + 1).trim());
+    if (index > 0) {
+      try { out[part.slice(0, index).trim()] = decodeURIComponent(part.slice(index + 1).trim()); }
+      catch { continue; }
+    }
   }
   return out;
 }
@@ -424,21 +448,54 @@ function requireAdmin(req, res) {
   return session;
 }
 
+function statsDateParts(date, formatter = statsDateFormatter) {
+  return Object.fromEntries(formatter.formatToParts(date).filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]));
+}
+
+function statsDateKey(date) {
+  const parts = statsDateParts(date);
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function addDaysToDateKey(dateKey, days) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+}
+
+function statsDateStartUtc(dateKey) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const targetLocalAsUtc = Date.UTC(year, month - 1, day);
+  let guess = targetLocalAsUtc;
+  for (let i = 0; i < 4; i++) {
+    const parts = statsDateParts(new Date(guess), statsDateTimeFormatter);
+    const observedLocalAsUtc = Date.UTC(
+      Number(parts.year), Number(parts.month) - 1, Number(parts.day),
+      Number(parts.hour), Number(parts.minute), Number(parts.second)
+    );
+    const adjustment = targetLocalAsUtc - observedLocalAsUtc;
+    if (!adjustment) break;
+    guess += adjustment;
+  }
+  return new Date(guess).toISOString();
+}
+
 function overview() {
   const now = new Date();
-  const cutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const today = statsDateKey(now);
+  const dailyDates = Array.from({ length: 7 }, (_, index) => addDaysToDateKey(today, index - 6));
+  const start = statsDateStartUtc(dailyDates[0]);
+  const end = statsDateStartUtc(addDaysToDateKey(today, 1));
   const totalUsers = Number(db.prepare('SELECT COUNT(*) AS n FROM users').get().n);
-  const newUsers7d = Number(db.prepare('SELECT COUNT(*) AS n FROM users WHERE first_seen >= ?').get(cutoff).n);
+  const recentUsers = db.prepare('SELECT first_seen FROM users WHERE first_seen >= ? AND first_seen < ?').all(start, end);
+  const newUsers7d = recentUsers.length;
   const consentedUsers = Number(db.prepare('SELECT COUNT(*) AS n FROM users WHERE consent_at IS NOT NULL').get().n);
   const consentRate = totalUsers ? Math.round(consentedUsers / totalUsers * 100) : 0;
-  const daily = new Map(db.prepare("SELECT substr(first_seen, 1, 10) AS day, COUNT(*) AS n FROM users WHERE first_seen >= ? GROUP BY day").all(cutoff).map((row) => [row.day, Number(row.n)]));
-  const dailyNewUsers = [];
-  const dailyDates = [];
-  for (let offset = 6; offset >= 0; offset--) {
-    const date = new Date(now.getTime() - offset * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    dailyDates.push(date);
-    dailyNewUsers.push(daily.get(date) || 0);
+  const daily = new Map(dailyDates.map((date) => [date, 0]));
+  for (const row of recentUsers) {
+    const date = statsDateKey(new Date(row.first_seen));
+    if (daily.has(date)) daily.set(date, daily.get(date) + 1);
   }
+  const dailyNewUsers = dailyDates.map((date) => daily.get(date) || 0);
   const userRows = db.prepare('SELECT telegram_id, locale, source_bot_id, first_seen, consent_at FROM users ORDER BY first_seen DESC LIMIT 200').all();
   const botById = new Map(bots.map((bot) => [bot.id, bot]));
   const users = userRows.map((row) => ({
