@@ -165,6 +165,9 @@ try {
 
   await startServer();
 
+  assert.equal((await fetch(`http://127.0.0.1:${appPort}/api/health`, { method: 'HEAD' })).status, 200,
+    'health endpoint supports HEAD checks used by curl -I');
+
   assert.equal((await request('/api/telegram/account', { cookie: 'haku_session=%E0%A4%A' })).status, 401,
     'malformed percent-encoded cookies are ignored instead of causing a 500');
   assert.equal((await request('/api/telegram/account/delete', { method: 'POST' })).status, 401,
@@ -339,3 +342,4 @@ try {
     }
   }
 }
+
