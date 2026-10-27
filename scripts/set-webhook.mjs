@@ -50,7 +50,7 @@ for (const bot of bots) {
 }
 
 const apiBase = (process.env.HAKU_TELEGRAM_API_BASE || 'https://api.telegram.org').replace(/\/+$/, '');
-const activeBots = bots.filter((bot) => bot.active !== false);
+const activeBots = bots.filter((bot) => bot.active === true);
 let failed = false;
 
 function webhookSecret(botId) {
@@ -113,4 +113,3 @@ for (const bot of activeBots) {
 }
 
 if (failed) process.exitCode = 1;
-
