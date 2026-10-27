@@ -6,6 +6,7 @@ import vm from 'node:vm';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const html = await readFile(join(ROOT, 'haku.html'), 'utf8');
+const server = await readFile(join(ROOT, 'server.mjs'), 'utf8');
 let source = html.slice(html.indexOf('const T ='), html.indexOf('const $='));
 source = source.replace('const T =', 'globalThis.T =').replace('const F=', 'globalThis.F=').replace('const A=', 'globalThis.A=');
 const copy = {};
@@ -31,8 +32,11 @@ assert.match(html, /id="consent" type="checkbox" checked/, 'Save account is sele
 for (const locale of ['en', 'vi', 'zh', 'km', 'th']) {
   assert.ok(copy.T[locale].startConsentText, `T.${locale}.startConsentText is present`);
   assert.ok(copy.T[locale].languageMenuLabel, `T.${locale}.languageMenuLabel is present`);
-  for (const key of ['datePlaceholder', 'dateDialogTitle', 'dateYear', 'dateMonth', 'dateDay', 'dateCancel', 'dateConfirm', 'timePlaceholder', 'timeDialogTitle', 'timeHour', 'timeMinute']) {
+  for (const key of ['datePlaceholder', 'dateDialogTitle', 'dateYear', 'dateMonth', 'dateDay', 'dateCancel', 'dateConfirm', 'timePlaceholder', 'timeDialogTitle', 'timeHour', 'timeMinute', 'savedAnswers', 'profileTitle', 'profileEmpty', 'saveProfile', 'deleteProfile', 'profileDeleteTitle', 'profileSaved', 'profileDeleted', 'profileTimeRequired', 'profileFormSaveError', 'profileHead', 'viewProfile']) {
     assert.ok(copy.T[locale][key], `T.${locale}.${key} is present`);
+  }
+  for (const key of ['userProfileTitle', 'profileBirthDate', 'profileBirthTime', 'profileUnknownTime', 'profileTermSide', 'profilePlace', 'profileRelationship', 'profileConcern', 'profileDuration', 'profileUpdatedAt']) {
+    assert.ok(copy.A[locale][key], `A.${locale}.${key} is present`);
   }
 }
 assert.match(html, /id="start-reading"[\s\S]+id="consent-panel"[\s\S]+class="moon-art"/, 'home orders start action, optional consent, then illustration');
@@ -51,6 +55,18 @@ assert.match(html, /date:\{columns:\['year','month','day'\]/, 'birth-date picker
 assert.match(html, /time:\{columns:\['hour','minute'\]/, 'birth-time picker configures two columns');
 assert.match(html, /function telegramBack\(\)\{if\(!\$\('#wheel-dialog'\)\.hidden\)\{closeWheelDialog\(\);return\}/, 'Telegram BackButton closes the shared wheel picker first');
 assert.doesNotMatch(html, /addEventListener\('change',renderQuestion\)/, 'ordinary questionnaire fields do not redraw the whole question on change');
-assert.match(html, /commit\(draft,trigger\)\{answers\.time=[\s\S]{0,240}updateTimeZoneNotice\(\)/, 'time Confirm updates the existing trigger and zone notice locally');
+assert.match(html, /commit\(draft,trigger,target\)\{target\.time=[\s\S]{0,280}target===answers\)updateTimeZoneNotice\(\)/, 'time Confirm updates the existing trigger and zone notice locally');
+assert.doesNotMatch(html, /\bCONSENT_VERSION\b/, 'Mini App does not duplicate the deployed consent version');
+assert.match(html, /consentCurrent=account\.consent_current===true/, 'Mini App reads current consent from the account response');
+assert.match(html, /consentCurrent=data\.consent_current===true/, 'Mini App reads renewed consent from the consent response');
+assert.match(html, /void saveReadingProfile\(\)/, 'completing the questionnaire saves a profile without blocking the story');
+assert.match(html, /id="reading-profile"[\s\S]+id="profile-form"/, 'My account includes the reading-profile editor');
+assert.match(html, /data-profile-user/, 'admin users expose owner-only profile actions');
+assert.match(html, /F\[lang\]\.birthPlaces\[profile\.place\]/, 'admin profile renders the localized place label');
+assert.match(html, /F\[lang\]\.steps\[2\]\.options\[profile\.relationship\]/, 'admin profile renders localized questionnaire choices');
+assert.doesNotMatch(html, /Object\.entries\(profile\)/, 'admin profile does not expose raw keys and values');
+const clientPlaces = html.match(/const PLACE_TZ=\{([^}]+)\}/)[1].match(/\b[a-z]{2}(?=:)/g).sort();
+const serverPlaces = server.match(/const profilePlaces = Object\.freeze\(\[([^\]]+)\]\)/)[1].match(/[a-z]{2}/g).sort();
+assert.deepEqual(clientPlaces, serverPlaces, 'client and server accept the same birthplace keys');
 
 console.log('locales.test.mjs: all locale key sets and account UI invariants pass.');

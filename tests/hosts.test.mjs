@@ -66,10 +66,11 @@ try {
   assert.ok(ready, `server.mjs did not become ready: ${stderr}`);
 
   assert.equal((await request('/api/admin/overview')).status, 404, 'admin API is hidden on the Mini App host');
+  assert.equal((await request('/api/admin/users/42/profile')).status, 404, 'owner profile API is hidden on the Mini App host');
   assert.equal((await request('/api/admin/overview', { host: 'admin.example.test' })).status, 401, 'admin host reaches authentication');
   const sessionStatus = await request('/api/admin/session', { host: 'admin.example.test' });
   assert.equal(sessionStatus.status, 200);
-  assert.deepEqual(JSON.parse(sessionStatus.body), { authenticated: false });
+  assert.deepEqual(JSON.parse(sessionStatus.body), { authenticated: false, admin: null });
 
   const logo = await request('/assets/logo-96.webp');
   assert.equal(logo.status, 200);

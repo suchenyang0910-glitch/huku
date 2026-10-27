@@ -36,11 +36,11 @@ const locales = ['en', 'vi', 'zh', 'km', 'th'];
 const states = ['unverified', 'verified-unsaved', 'saved'];
 const viewports = [{ width: 390, height: 750 }, { width: 360, height: 640 }];
 
-async function openScenario({ locale = 'en', state = 'verified-unsaved', viewport = viewports[0], consentFails = false, telegram = true, colorScheme = 'light' } = {}) {
+async function openScenario({ locale = 'en', state = 'verified-unsaved', viewport = viewports[0], consentFails = false, profileFails = false, telegram = true, colorScheme = 'light' } = {}) {
   const context = await browser.newContext({ viewport });
   await context.route('https://telegram.org/**', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
   await context.route('https://fonts.googleapis.com/**', route => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
-  await context.addInitScript(({ locale, state, consentFails, telegram, colorScheme }) => {
+  await context.addInitScript(({ locale, state, consentFails, profileFails, telegram, colorScheme }) => {
     localStorage.setItem('haku-locale', locale);
     const main = {
       visible: false, text: '', callback: null,
@@ -56,7 +56,11 @@ async function openScenario({ locale = 'en', state = 'verified-unsaved', viewpor
       offClick(callback) { if (this.callback === callback) this.callback = null; },
       click() { return this.callback?.(); }
     };
-    window.__hakuTest = { authCalls: 0, consentCalls: 0, haptics: 0, main, back };
+    window.__hakuTest = { authCalls: 0, consentCalls: 0, profilePuts: 0, profileDeletes: 0, profileFails, haptics: 0, main, back };
+    if (!localStorage.getItem('__hakuFakeInitialized')) {
+      localStorage.setItem('__hakuFakeInitialized', '1');
+      if (state === 'saved' || state === 'old-v3') localStorage.setItem('__hakuFakeAccount', JSON.stringify({ telegram_id: '42', locale, consent_version: state === 'old-v3' ? '2026-10-28-v3-start-reading' : '2026-10-28-v4-reading-profile' }));
+    }
     if (telegram) window.Telegram = { WebApp: {
         initData: 'signed-test-data',
         initDataUnsafe: { user: { id: 42, first_name: 'Lan', username: 'lan', language_code: locale } },
@@ -75,15 +79,35 @@ async function openScenario({ locale = 'en', state = 'verified-unsaved', viewpor
         return new Response(JSON.stringify({ user: { id: '42', name: 'Lan', username: 'lan' }, csrfToken: 'csrf' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       if (url.endsWith('/api/telegram/account')) {
-        return new Response(state === 'saved' ? JSON.stringify({ id: '42' }) : '{}', { status: state === 'saved' ? 200 : 404, headers: { 'Content-Type': 'application/json' } });
+        const account = localStorage.getItem('__hakuFakeAccount');
+        const profile = localStorage.getItem('__hakuFakeProfile');
+        const saved = account ? JSON.parse(account) : null;
+        return new Response(saved ? JSON.stringify({ ...saved, consent_current: saved.consent_version === '2026-10-28-v4-reading-profile', profile: profile ? JSON.parse(profile) : null }) : '{}', { status: saved ? 200 : 404, headers: { 'Content-Type': 'application/json' } });
       }
       if (url.endsWith('/api/telegram/consent')) {
         window.__hakuTest.consentCalls++;
-        return new Response(consentFails ? '{}' : JSON.stringify({ saved: true }), { status: consentFails ? 500 : 200, headers: { 'Content-Type': 'application/json' } });
+        if (!consentFails) localStorage.setItem('__hakuFakeAccount', JSON.stringify({ telegram_id: '42', locale, consent_version: '2026-10-28-v4-reading-profile' }));
+        return new Response(consentFails ? '{}' : JSON.stringify({ saved: true, consent_current: true }), { status: consentFails ? 500 : 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      if (url.endsWith('/api/telegram/profile')) {
+        if ((options.method || 'GET') === 'PUT') {
+          window.__hakuTest.profilePuts++;
+          if (window.__hakuTest.profileFails) return new Response('{}', { status: 500, headers: { 'Content-Type': 'application/json' } });
+          const profile = { ...JSON.parse(options.body), telegram_id: '42', updated_at: new Date().toISOString() };
+          localStorage.setItem('__hakuFakeProfile', JSON.stringify(profile));
+          return new Response(JSON.stringify(profile), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        if (options.method === 'DELETE') {
+          window.__hakuTest.profileDeletes++;
+          localStorage.removeItem('__hakuFakeProfile');
+          return new Response(JSON.stringify({ deleted: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        const profile = localStorage.getItem('__hakuFakeProfile');
+        return new Response(profile || '{}', { status: profile ? 200 : 404, headers: { 'Content-Type': 'application/json' } });
       }
       return originalFetch(input, options);
     };
-  }, { locale, state, consentFails, telegram, colorScheme });
+  }, { locale, state, consentFails, profileFails, telegram, colorScheme });
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -96,6 +120,24 @@ async function openScenario({ locale = 'en', state = 'verified-unsaved', viewpor
   await page.waitForFunction(telegram => window.__hakuTest && window.__hakuTest.authCalls === (telegram ? 1 : 0), telegram);
   await page.waitForTimeout(20);
   return { context, page, errors };
+}
+
+async function completeReading(page) {
+  await page.click('#start-reading');
+  await page.click('#answer-date');
+  await page.locator('#date-month-5').click();
+  await page.locator('#date-day-15').click();
+  await page.click('#wheel-confirm');
+  await page.selectOption('#answer-place', 'cn');
+  await page.click('#question-next');
+  await page.click('#answer-time');
+  await page.click('#wheel-confirm');
+  await page.click('#question-next');
+  for (const name of ['relationship', 'concern', 'duration']) {
+    await page.locator(`[name="answer-${name}"]`).first().check();
+    await page.click('#question-next');
+  }
+  await page.waitForFunction(() => window.__hakuTest.profilePuts === 1);
 }
 
 try {
@@ -289,7 +331,73 @@ try {
   assert.equal(await timeScenario.page.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0, 'time question does not scroll horizontally');
   assert.deepEqual(timeScenario.errors, []);
   await timeScenario.context.close();
-  console.log('check-first-screen.mjs: layout, Telegram controls, shared date/time wheel, and screenshots pass.');
+
+  const profileScenario = await openScenario({ locale: 'zh', state: 'verified-unsaved', viewport: { width: 390, height: 750 } });
+  await completeReading(profileScenario.page);
+  assert.equal(await profileScenario.page.evaluate(() => JSON.parse(localStorage.getItem('__hakuFakeProfile')).birth_date), '1990-05-15', 'completed questionnaire saves the profile');
+  await profileScenario.page.reload({ waitUntil: 'domcontentloaded' });
+  await profileScenario.page.waitForFunction(() => window.__hakuTest.authCalls === 1 && !document.querySelector('#start-reading').disabled);
+  await profileScenario.page.click('#start-reading');
+  assert.match(await profileScenario.page.locator('#answer-date').textContent(), /1990.*5.*15/, 'refresh prefills the saved birth date');
+  assert.equal(await profileScenario.page.locator('#answer-place').inputValue(), 'cn', 'refresh prefills the saved place');
+  await profileScenario.page.click('#question-prev');
+  await profileScenario.page.click('#user-entry');
+  await profileScenario.page.waitForFunction(() => !document.querySelector('#profile-form').hidden);
+  await profileScenario.page.screenshot({ path: path.join(screenshotDir, 'task-17-reading-profile.png'), fullPage: true });
+  await profileScenario.page.check('#profile-unknown-time');
+  await profileScenario.page.uncheck('#profile-unknown-time');
+  await profileScenario.page.click('#profile-save');
+  assert.equal(await profileScenario.page.locator('#profile-error').textContent(), '请选择出生时间。', 'profile form requires a birth time when unknown time is not selected');
+  assert.equal(await profileScenario.page.evaluate(() => window.__hakuTest.profilePuts), 0, 'missing profile time does not send a request');
+  await profileScenario.page.click('#profile-time');
+  await profileScenario.page.locator('#time-hour-23').click();
+  await profileScenario.page.locator('#time-minute-30').click();
+  await profileScenario.page.click('#wheel-confirm');
+  await profileScenario.page.evaluate(() => { window.__hakuTest.profileFails = true; });
+  await profileScenario.page.click('#profile-save');
+  await profileScenario.page.waitForFunction(() => window.__hakuTest.profilePuts === 1);
+  assert.equal(await profileScenario.page.locator('#profile-error').textContent(), '保存失败，请重试。', 'profile form save failures stay inline with form-specific copy');
+  assert.doesNotMatch(await profileScenario.page.locator('#profile-error').textContent(), /不会影响本次阅读/, 'profile form does not use questionnaire failure copy');
+  await profileScenario.page.evaluate(() => { window.__hakuTest.profileFails = false; });
+  await profileScenario.page.click('#profile-save');
+  await profileScenario.page.waitForFunction(() => window.__hakuTest.profilePuts === 2 && JSON.parse(localStorage.getItem('__hakuFakeProfile')).birth_time === '23:30');
+  await profileScenario.page.click('#me-back');
+  await profileScenario.page.waitForFunction(() => !document.querySelector('#mini-view').hidden);
+  await profileScenario.page.click('#start-reading');
+  await profileScenario.page.click('#question-next');
+  assert.equal(await profileScenario.page.locator('#answer-time').textContent(), '23:30', 'My account edit prefills the questionnaire with 23:30');
+  await profileScenario.page.click('#question-prev');
+  await profileScenario.page.click('#question-prev');
+  await profileScenario.page.click('#user-entry');
+  await profileScenario.page.click('#profile-delete');
+  await profileScenario.page.click('#delete-confirm');
+  await profileScenario.page.waitForFunction(() => window.__hakuTest.profileDeletes === 1);
+  assert.ok(await profileScenario.page.evaluate(() => localStorage.getItem('__hakuFakeAccount')), 'profile deletion keeps the account');
+  await profileScenario.page.click('#me-back');
+  await profileScenario.page.waitForFunction(() => !document.querySelector('#mini-view').hidden);
+  await profileScenario.page.click('#start-reading');
+  assert.match(await profileScenario.page.locator('#answer-date').textContent(), /选择出生日期/, 'profile deletion restores an empty questionnaire');
+  assert.deepEqual(profileScenario.errors, []);
+  await profileScenario.context.close();
+
+  const oldConsent = await openScenario({ locale: 'zh', state: 'old-v3', viewport: { width: 390, height: 750 } });
+  assert.equal(await oldConsent.page.locator('#consent-panel').isVisible(), true, 'v3 user sees renewed consent on home');
+  assert.equal(await oldConsent.page.locator('#consent').isChecked(), true, 'renewed consent is selected by default');
+  await oldConsent.page.screenshot({ path: path.join(screenshotDir, 'task-17-renew-consent.png') });
+  await oldConsent.page.click('#user-entry');
+  await oldConsent.page.waitForFunction(() => !document.querySelector('#me-view').hidden);
+  assert.equal(await oldConsent.page.locator('#me-consent-panel').isVisible(), true, 'v3 user sees renewed consent in My account');
+  assert.equal(await oldConsent.page.locator('#me-consent').isChecked(), true, 'My account renewed consent is selected by default');
+  await oldConsent.page.click('#me-back');
+  await oldConsent.page.waitForFunction(() => !document.querySelector('#mini-view').hidden);
+  await oldConsent.page.uncheck('#consent');
+  await oldConsent.page.click('#start-reading');
+  assert.equal(await oldConsent.page.evaluate(() => window.__hakuTest.consentCalls), 0, 'clearing renewed consent does not submit consent');
+  assert.equal(await oldConsent.page.evaluate(() => window.__hakuTest.profilePuts), 0, 'v3 user without renewed consent does not save a profile');
+  assert.deepEqual(oldConsent.errors, []);
+  await oldConsent.context.close();
+
+  console.log('check-first-screen.mjs: layout, Telegram controls, shared wheels, reading profile persistence, and screenshots pass.');
 } finally {
   await browser.close();
   await new Promise(resolve => server.close(resolve));

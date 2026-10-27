@@ -82,15 +82,15 @@ async function stopServer() {
   processHandle = null;
 }
 
-async function request(path, { method = 'GET', body, cookie, csrf } = {}) {
-  const headers = {};
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
+async function request(path, { method = 'GET', body, rawBody, cookie, csrf, headers: extraHeaders = {} } = {}) {
+  const headers = { ...extraHeaders };
+  if (body !== undefined || rawBody !== undefined) headers['Content-Type'] = 'application/json';
   if (cookie) headers.Cookie = cookie;
   if (csrf) headers['X-CSRF-Token'] = csrf;
   const response = await fetch(`http://127.0.0.1:${appPort}${path}`, {
     method,
     headers,
-    ...(body === undefined ? {} : { body: JSON.stringify(body) })
+    ...(body === undefined && rawBody === undefined ? {} : { body: rawBody ?? JSON.stringify(body) })
   });
   const text = await response.text();
   const parsed = text ? JSON.parse(text) : null;
@@ -128,6 +128,7 @@ try {
     HOST: '127.0.0.1',
     PORT: String(port),
     HAKU_PUBLIC_ORIGIN: 'http://127.0.0.1:' + port,
+    HAKU_ADMIN_ORIGIN: 'http://127.0.0.1:' + port,
     HAKU_ALLOWED_ORIGINS: 'http://127.0.0.1:' + port,
     HAKU_COOKIE_SAMESITE: 'lax',
     HAKU_TRUSTED_PROXY: 'false',
@@ -171,8 +172,10 @@ try {
     'delete without a user session returns 401');
   assert.equal((await request('/api/telegram/account')).status, 401,
     'export without a user session returns 401');
+  assert.equal((await request('/api/telegram/profile')).status, 401,
+    'profile read without a user session returns 401');
 
-  const userSession = await createUserSession(userId);
+  let userSession = await createUserSession(userId);
   assert.match(userSession.cookie, /^haku_session=/, 'Telegram session uses the user cookie name');
   assert.equal((await request('/api/telegram/account', { cookie: userSession.cookie })).status, 404,
     'successful Telegram verification does not create a saved account');
@@ -185,16 +188,79 @@ try {
     body: { accepted: true, locale: 'en' }
   });
   assert.equal(consent.status, 200, 'user consents to saving account');
+  assert.equal(consent.body.consent_current, true, 'consent response confirms the configured version is current');
+  assert.equal((await request('/api/telegram/account', { cookie: userSession.cookie })).body.consent_current, true,
+    'account response derives current consent from the server version');
 
-  const exported = await request('/api/telegram/account', { cookie: userSession.cookie });
+  const sampleProfile = {
+    birth_date: '1990-05-15', birth_time: '23:30', unknown_time: false, term_side: '', place: 'cn',
+    relationship: 1, concern: 2, duration: 3
+  };
+  assert.equal((await request('/api/telegram/profile', {
+    method: 'PUT', cookie: userSession.cookie, body: sampleProfile
+  })).status, 403, 'profile write requires CSRF');
+  for (const [label, update] of [
+    ['impossible date', { birth_date: '2023-02-29' }],
+    ['future date', { birth_date: '2999-01-01' }],
+    ['time with unknown flag', { unknown_time: true }],
+    ['unknown place', { place: 'xx' }],
+    ['option outside range', { concern: 4 }]
+  ]) {
+    const invalid = await request('/api/telegram/profile', {
+      method: 'PUT', cookie: userSession.cookie, csrf: userSession.csrf, body: { ...sampleProfile, ...update }
+    });
+    assert.equal(invalid.status, 400, `${label} is rejected`);
+  }
+  assert.equal((await request('/api/telegram/profile', {
+    method: 'PUT', cookie: userSession.cookie, csrf: userSession.csrf,
+    rawBody: JSON.stringify({ ...sampleProfile, padding: 'x'.repeat(5000) })
+  })).status, 413, 'profile request body is limited to 4KB');
+
+  const renewedConsentVersion = 'api-test-v2';
+  await stopServer();
+  childEnv = { ...childEnv, HAKU_CONSENT_VERSION: renewedConsentVersion };
+  await startServer();
+  userSession = await createUserSession(userId);
+  const outdatedAccount = await request('/api/telegram/account', { cookie: userSession.cookie });
+  assert.equal(outdatedAccount.status, 200);
+  assert.equal(outdatedAccount.body.consent_current, false,
+    'changing the configured version marks an existing user consent as outdated after restart');
+  assert.deepEqual(await request('/api/telegram/profile', {
+    method: 'PUT', cookie: userSession.cookie, csrf: userSession.csrf, body: sampleProfile
+  }).then(({ status, body }) => ({ status, body })), { status: 409, body: { error: 'consent_outdated' } },
+  'old consent cannot save a reading profile');
+  const renewedConsent = await request('/api/telegram/consent', {
+    method: 'POST', cookie: userSession.cookie, csrf: userSession.csrf, body: { accepted: true, locale: 'en' }
+  });
+  assert.equal(renewedConsent.status, 200, 'user can renew consent');
+  assert.equal(renewedConsent.body.consent_current, true, 'renewed consent is current');
+  assert.equal((await request('/api/telegram/account', { cookie: userSession.cookie })).body.consent_current, true,
+    'account response becomes current after renewed consent');
+  const createdProfile = await request('/api/telegram/profile', {
+    method: 'PUT', cookie: userSession.cookie, csrf: userSession.csrf, body: sampleProfile
+  });
+  assert.equal(createdProfile.status, 200, 'profile can be created');
+  assert.equal(createdProfile.body.birth_time, '23:30');
+  assert.equal(createdProfile.body.unknown_time, false);
+  assert.ok(Number.isFinite(Date.parse(createdProfile.body.updated_at)));
+  assert.deepEqual((await request('/api/telegram/profile', { cookie: userSession.cookie })).body, createdProfile.body,
+    'profile can be read back');
+  const readAuditDb = new DatabaseSync(dbPath);
+  assert.equal(readAuditDb.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE action = 'admin_profile_view'").get().n, 0,
+    'self-service profile reads do not write audit entries');
+  readAuditDb.close();
+
+  const exported = await request('/api/telegram/account?export=1', { cookie: userSession.cookie });
   assert.equal(exported.status, 200, 'consented user can export account data');
   assert.deepEqual(Object.keys(exported.body).sort(), [
-    'consent_at', 'consent_version', 'first_seen', 'last_seen', 'locale', 'source_bot_id', 'telegram_id'
-  ].sort(), 'export contains exactly the persisted account fields');
+    'consent_at', 'consent_current', 'consent_version', 'first_seen', 'last_seen', 'locale', 'profile', 'source_bot_id', 'telegram_id'
+  ].sort(), 'export contains persisted account fields plus the server-derived consent state');
   assert.equal(exported.body.telegram_id, userId);
   assert.equal(exported.body.locale, 'en');
   assert.equal(exported.body.source_bot_id, 'bot-test');
-  assert.equal(exported.body.consent_version, consentVersion);
+  assert.equal(exported.body.consent_version, renewedConsentVersion);
+  assert.equal(exported.body.consent_current, true);
+  assert.equal(exported.body.profile.birth_date, sampleProfile.birth_date, 'account export includes the profile');
   for (const field of ['first_seen', 'last_seen', 'consent_at']) {
     assert.ok(Number.isFinite(Date.parse(exported.body[field])), `${field} is an ISO timestamp`);
   }
@@ -228,6 +294,8 @@ try {
   const viewerCsrf = viewerLogin.body.csrfToken;
   assert.equal((await request('/api/admin/overview', { cookie: viewerCookie })).status, 200,
     'viewer can read overview');
+  assert.equal((await request(`/api/admin/users/${userId}/profile`, { cookie: viewerCookie })).status, 403,
+    'viewer cannot read a profile');
   assert.equal((await request('/api/admin/overview', {
     method: 'POST', cookie: viewerCookie, csrf: viewerCsrf, body: {}
   })).status, 403, 'viewer cannot perform admin writes');
@@ -235,6 +303,34 @@ try {
   const overviewBefore = await request('/api/admin/overview', { cookie: adminCookie });
   assert.equal(overviewBefore.status, 200);
   assert.ok(overviewBefore.body.users.some((user) => user.id === userId), 'saved user appears in overview before deletion');
+  assert.equal(overviewBefore.body.users.find((user) => user.id === userId).hasProfile, true,
+    'admin list reports whether a user has a profile');
+  assert.equal(overviewBefore.body.pagination.page, 1, 'admin user list is paginated');
+  const ownerProfile = await request(`/api/admin/users/${userId}/profile`, { cookie: adminCookie });
+  assert.equal(ownerProfile.status, 200, 'owner can read a profile');
+  assert.equal(ownerProfile.body.birth_date, sampleProfile.birth_date);
+  assert.equal((await request(`/api/admin/users/${userId}/profile`, {
+    cookie: adminCookie, headers: { Origin: 'https://mini.truesignal.cc' }
+  })).status, 403, 'cross-origin admin profile access is rejected');
+
+  const updatedProfile = await request('/api/telegram/profile', {
+    method: 'PUT', cookie: userSession.cookie, csrf: userSession.csrf,
+    body: { ...sampleProfile, birth_time: null, unknown_time: true, term_side: 'unknown' }
+  });
+  assert.equal(updatedProfile.status, 200, 'profile can be updated');
+  assert.equal(updatedProfile.body.birth_time, null);
+  assert.equal((await request('/api/telegram/profile', {
+    method: 'DELETE', cookie: userSession.cookie
+  })).status, 403, 'profile delete requires CSRF');
+  assert.equal((await request('/api/telegram/profile', {
+    method: 'DELETE', cookie: userSession.cookie, csrf: userSession.csrf
+  })).status, 200, 'profile can be deleted without deleting the account');
+  assert.equal((await request('/api/telegram/profile', { cookie: userSession.cookie })).status, 404);
+  assert.equal((await request('/api/telegram/account', { cookie: userSession.cookie })).status, 200,
+    'deleting the profile keeps the account');
+  assert.equal((await request('/api/telegram/profile', {
+    method: 'PUT', cookie: userSession.cookie, csrf: userSession.csrf, body: sampleProfile
+  })).status, 200, 'profile is recreated for account deletion test');
 
   const utcDay = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const utc1730 = `${utcDay}T17:30:00.000Z`;
@@ -243,7 +339,7 @@ try {
   const statsDb = new DatabaseSync(dbPath);
   statsDb.prepare(`INSERT INTO users (telegram_id, locale, source_bot_id, first_seen, last_seen, consent_at, consent_version)
     VALUES (?, 'en', 'bot-test', ?, ?, ?, ?)`)
-    .run(statsUserId, utc1730, utc1730, utc1730, consentVersion);
+    .run(statsUserId, utc1730, utc1730, utc1730, renewedConsentVersion);
   statsDb.close();
   const timezoneStats = await request('/api/admin/overview', { cookie: adminCookie });
   assert.equal(timezoneStats.status, 200);
@@ -267,6 +363,10 @@ try {
   assert.equal(overviewAfter.status, 200);
   assert.equal(overviewAfter.body.users.some((user) => user.id === userId), false,
     'deleted user no longer appears in admin overview');
+  const afterAccountDeleteDb = new DatabaseSync(dbPath);
+  assert.equal(afterAccountDeleteDb.prepare('SELECT COUNT(*) AS n FROM reading_profiles WHERE telegram_id = ?').get(userId).n, 0,
+    'account deletion explicitly removes the profile');
+  afterAccountDeleteDb.close();
 
   const logout = await request('/api/admin/logout', {
     method: 'POST', cookie: adminCookie, csrf: ownerCsrf
@@ -278,6 +378,10 @@ try {
   db.prepare(`INSERT INTO users (telegram_id, locale, source_bot_id, first_seen, last_seen, consent_at, consent_version)
     VALUES (?, 'en', 'bot-test', ?, ?, ?, ?)`)
     .run(staleUserId, expired, expired, expired, consentVersion);
+  db.prepare(`INSERT INTO reading_profiles
+    (telegram_id, birth_date, birth_time, unknown_time, term_side, place, relationship, concern, duration, updated_at)
+    VALUES (?, '1990-05-15', '12:00', 0, '', 'cn', 0, 0, 0, ?)`)
+    .run(staleUserId, expired);
   db.close();
 
   await stopServer();
@@ -287,6 +391,10 @@ try {
   assert.equal(afterRetentionCleanup.status, 200);
   assert.equal(afterRetentionCleanup.body.users.some((user) => user.id === staleUserId), false,
     'record older than the configured retention period is cleaned at startup');
+  const retentionDb = new DatabaseSync(dbPath);
+  assert.equal(retentionDb.prepare('SELECT COUNT(*) AS n FROM reading_profiles WHERE telegram_id = ?').get(staleUserId).n, 0,
+    'retention cleanup explicitly removes reading profiles');
+  retentionDb.close();
 
   let limited = false;
   for (let i = 0; i < 10 && !limited; i++) {
@@ -314,6 +422,8 @@ try {
   assert.ok(auditActions.some((entry) => entry.action === 'admin_logout' && entry.admin_id));
   assert.ok(auditActions.some((entry) => entry.action === 'account_export' && entry.admin_id === null));
   assert.ok(auditActions.some((entry) => entry.action === 'account_export' && entry.target === 'self-service-account'));
+  assert.ok(auditActions.some((entry) => entry.action === 'admin_profile_view' && entry.target === userId && entry.admin_id),
+    'owner profile access is audited against the Telegram ID');
 
   assert.equal(stdout.includes(secret) || stderr.includes(secret), false, 'logs do not contain the session secret');
   assert.equal(stdout.includes(botToken) || stderr.includes(botToken), false, 'logs do not contain the Bot token');
@@ -322,7 +432,8 @@ try {
 
   await stopServer();
   const legacyDbPath = join(tempDir, 'legacy.sqlite');
-  childEnv = { ...childEnv, PORT: String(await probePort()), HAKU_DB_PATH: legacyDbPath };
+  const legacyPort = await probePort();
+  childEnv = { ...childEnv, PORT: String(legacyPort), HAKU_ADMIN_ORIGIN: `http://127.0.0.1:${legacyPort}`, HAKU_DB_PATH: legacyDbPath };
   await startServer();
   const legacyLogin = await request('/api/admin/login', {
     method: 'POST', body: { username: 'owner', password: legacyPassword }

@@ -67,6 +67,31 @@ function ensureAdminSchema(database) {
   `);
 }
 
+function ensureReadingProfilesSchema(database) {
+  try {
+    database.exec(`
+      BEGIN IMMEDIATE;
+      CREATE TABLE IF NOT EXISTS reading_profiles (
+        telegram_id TEXT PRIMARY KEY REFERENCES users(telegram_id),
+        birth_date TEXT NOT NULL CHECK (birth_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+        birth_time TEXT CHECK (birth_time IS NULL OR birth_time GLOB '[0-2][0-9]:[0-5][0-9]'),
+        unknown_time INTEGER NOT NULL CHECK (unknown_time IN (0, 1)),
+        term_side TEXT NOT NULL CHECK (term_side IN ('', 'before', 'after', 'unknown')),
+        place TEXT NOT NULL CHECK (place IN ('kh', 'th', 'vn', 'cn', 'sg', 'my')),
+        relationship INTEGER NOT NULL CHECK (relationship BETWEEN 0 AND 3),
+        concern INTEGER NOT NULL CHECK (concern BETWEEN 0 AND 3),
+        duration INTEGER NOT NULL CHECK (duration BETWEEN 0 AND 3),
+        updated_at TEXT NOT NULL,
+        CHECK ((unknown_time = 1 AND birth_time IS NULL) OR (unknown_time = 0 AND birth_time IS NOT NULL))
+      ) STRICT;
+      COMMIT;
+    `);
+  } catch (error) {
+    try { database.exec('ROLLBACK;'); } catch {}
+    throw error;
+  }
+}
+
 function hashAdminPassword(password) {
   const salt = randomBytes(16);
   const key = scryptSync(password, salt, 64);
@@ -183,6 +208,8 @@ const legacyAdminPassword = process.env.HAKU_ADMIN_PASSWORD || '';
 if (/replace-with/i.test(sessionSecret)) throw new Error('Replace the example session secret before starting');
 const dummyAdminPasswordHash = hashAdminPassword(randomBytes(32).toString('base64url'));
 const consentVersion = required('HAKU_CONSENT_VERSION', 1);
+const profilePlaces = Object.freeze(['kh', 'th', 'vn', 'cn', 'sg', 'my']);
+const profileTimezones = Object.freeze({ kh: 'Asia/Phnom_Penh', th: 'Asia/Bangkok', vn: 'Asia/Ho_Chi_Minh', cn: 'Asia/Shanghai', sg: 'Asia/Singapore', my: 'Asia/Kuala_Lumpur' });
 const retentionDays = Number(process.env.HAKU_RETENTION_DAYS || 365);
 if (!Number.isSafeInteger(retentionDays) || retentionDays < 1) throw new Error('HAKU_RETENTION_DAYS must be a positive whole number');
 const statsTimezone = (process.env.HAKU_STATS_TIMEZONE || 'Asia/Phnom_Penh').trim();
@@ -270,6 +297,7 @@ db.exec(`
 `);
 
 ensureUsersSchema(db);
+ensureReadingProfilesSchema(db);
 ensureAdminSchema(db);
 
 const auditInsert = db.prepare('INSERT INTO audit_log (id, admin_id, action, target, at, ip) VALUES (?, ?, ?, ?, ?, ?)');
@@ -279,7 +307,15 @@ function writeAudit(adminId, action, target, ip) {
 
 function cleanExpiredUsers() {
   const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
-  db.prepare('DELETE FROM users WHERE last_seen < ?').run(cutoff);
+  try {
+    db.exec('BEGIN IMMEDIATE;');
+    db.prepare('DELETE FROM reading_profiles WHERE telegram_id IN (SELECT telegram_id FROM users WHERE last_seen < ?)').run(cutoff);
+    db.prepare('DELETE FROM users WHERE last_seen < ?').run(cutoff);
+    db.exec('COMMIT;');
+  } catch (error) {
+    try { db.exec('ROLLBACK;'); } catch {}
+    throw error;
+  }
 }
 
 cleanExpiredUsers();
@@ -362,7 +398,7 @@ function setCors(req, res) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-CSRF-Token');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   return true;
 }
 
@@ -382,6 +418,37 @@ async function readJson(req, maxBytes = 32_768) {
   }
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
   catch { throw Object.assign(new Error('Invalid JSON body'), { status: 400 }); }
+}
+
+function profilePayload(row) {
+  if (!row) return null;
+  return { ...row, unknown_time: Boolean(row.unknown_time) };
+}
+
+function validateReadingProfile(body) {
+  const fields = ['birth_date', 'birth_time', 'unknown_time', 'term_side', 'place', 'relationship', 'concern', 'duration'];
+  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some((key) => !fields.includes(key)) || fields.some((key) => !Object.hasOwn(body, key))) {
+    throw Object.assign(new Error('profile_invalid'), { status: 400 });
+  }
+  if (!profilePlaces.includes(body.place)) throw Object.assign(new Error('place_invalid'), { status: 400 });
+  const match = typeof body.birth_date === 'string' && body.birth_date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) throw Object.assign(new Error('birth_date_invalid'), { status: 400 });
+  const [year, month, day] = match.slice(1).map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  const todayParts = Object.fromEntries(new Intl.DateTimeFormat('en', { timeZone: profileTimezones[body.place], year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()).map((part) => [part.type, part.value]));
+  const today = `${todayParts.year}-${todayParts.month}-${todayParts.day}`;
+  if (year < 1930 || date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day || body.birth_date > today) {
+    throw Object.assign(new Error('birth_date_invalid'), { status: 400 });
+  }
+  if (typeof body.unknown_time !== 'boolean') throw Object.assign(new Error('unknown_time_invalid'), { status: 400 });
+  if (body.unknown_time ? body.birth_time !== null : typeof body.birth_time !== 'string' || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(body.birth_time)) {
+    throw Object.assign(new Error('birth_time_invalid'), { status: 400 });
+  }
+  if (!['', 'before', 'after', 'unknown'].includes(body.term_side)) throw Object.assign(new Error('term_side_invalid'), { status: 400 });
+  for (const field of ['relationship', 'concern', 'duration']) {
+    if (!Number.isInteger(body[field]) || body[field] < 0 || body[field] > 3) throw Object.assign(new Error(`${field}_invalid`), { status: 400 });
+  }
+  return body;
 }
 
 function clientIp(req) {
@@ -520,7 +587,7 @@ function statsDateStartUtc(dateKey) {
   return new Date(guess).toISOString();
 }
 
-function overview() {
+function overview(page = 1, pageSize = 50) {
   const now = new Date();
   const today = statsDateKey(now);
   const dailyDates = Array.from({ length: 7 }, (_, index) => addDaysToDateKey(today, index - 6));
@@ -537,20 +604,25 @@ function overview() {
     if (daily.has(date)) daily.set(date, daily.get(date) + 1);
   }
   const dailyNewUsers = dailyDates.map((date) => daily.get(date) || 0);
-  const userRows = db.prepare('SELECT telegram_id, locale, source_bot_id, first_seen, consent_at FROM users ORDER BY first_seen DESC LIMIT 200').all();
+  const userRows = db.prepare(`SELECT users.telegram_id, users.locale, users.source_bot_id, users.last_seen, users.consent_at,
+      reading_profiles.telegram_id IS NOT NULL AS has_profile
+    FROM users LEFT JOIN reading_profiles USING (telegram_id)
+    ORDER BY users.last_seen DESC LIMIT ? OFFSET ?`).all(pageSize, (page - 1) * pageSize);
   const botById = new Map(bots.map((bot) => [bot.id, bot]));
   const users = userRows.map((row) => ({
     id: row.telegram_id,
     bot: botById.get(row.source_bot_id)?.name || row.source_bot_id,
     locale: row.locale,
-    date: row.first_seen.slice(0, 10),
-    consent: Boolean(row.consent_at)
+    date: row.last_seen.slice(0, 10),
+    consent: Boolean(row.consent_at),
+    hasProfile: Boolean(row.has_profile)
   }));
   return {
     metrics: { totalUsers, newUsers7d, consentRate },
     dailyNewUsers,
     dailyDates,
     users,
+    pagination: { page, pageSize, total: totalUsers, pages: Math.max(1, Math.ceil(totalUsers / pageSize)) },
     bots: bots.map(({ id, name, handle, role, active }) => ({ id, name, handle, role, active })),
     csrfToken: null
   };
@@ -639,7 +711,7 @@ const server = createServer(async (req, res) => {
       if (!['en', 'vi', 'zh', 'km', 'th'].includes(body.locale)) return json(res, 400, { error: 'locale_invalid' });
       const timestamp = new Date().toISOString();
       userUpsert.run(session.telegramId, body.locale, session.botId, timestamp, timestamp, timestamp, consentVersion);
-      return json(res, 200, { saved: true, botName: bots.find((bot) => bot.id === session.botId)?.name || session.botId });
+      return json(res, 200, { saved: true, consent_current: true, botName: bots.find((bot) => bot.id === session.botId)?.name || session.botId });
     }
 
     if (path === '/api/telegram/account' && req.method === 'GET') {
@@ -648,20 +720,65 @@ const server = createServer(async (req, res) => {
       const account = db.prepare(`SELECT telegram_id, locale, source_bot_id, first_seen, last_seen, consent_at, consent_version
         FROM users WHERE telegram_id = ?`).get(session.telegramId);
       if (!account) return json(res, 404, { error: 'account_not_found' });
-      writeAudit(null, 'account_export', 'self-service-account', clientIp(req));
-      return json(res, 200, account);
+      if (url.searchParams.get('export') === '1') writeAudit(null, 'account_export', 'self-service-account', clientIp(req));
+      const profile = profilePayload(db.prepare('SELECT * FROM reading_profiles WHERE telegram_id = ?').get(session.telegramId));
+      return json(res, 200, { ...account, consent_current: account.consent_version === consentVersion, profile });
+    }
+
+    if (path === '/api/telegram/profile' && req.method === 'GET') {
+      const session = getSession(req);
+      if (!session || session.type !== 'user') return json(res, 401, { error: 'telegram_session_required' });
+      const profile = profilePayload(db.prepare('SELECT * FROM reading_profiles WHERE telegram_id = ?').get(session.telegramId));
+      return profile ? json(res, 200, profile) : json(res, 404, { error: 'profile_not_found' });
+    }
+
+    if (path === '/api/telegram/profile' && req.method === 'PUT') {
+      const session = getSession(req);
+      if (!session || session.type !== 'user') return json(res, 401, { error: 'telegram_session_required' });
+      if (!csrfValid(req, session)) return json(res, 403, { error: 'csrf_invalid' });
+      const account = db.prepare('SELECT consent_version FROM users WHERE telegram_id = ?').get(session.telegramId);
+      if (!account) return json(res, 404, { error: 'account_not_found' });
+      if (account.consent_version !== consentVersion) return json(res, 409, { error: 'consent_outdated' });
+      const profile = validateReadingProfile(await readJson(req, 4096));
+      const updatedAt = new Date().toISOString();
+      db.prepare(`INSERT INTO reading_profiles
+        (telegram_id, birth_date, birth_time, unknown_time, term_side, place, relationship, concern, duration, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(telegram_id) DO UPDATE SET birth_date=excluded.birth_date, birth_time=excluded.birth_time,
+          unknown_time=excluded.unknown_time, term_side=excluded.term_side, place=excluded.place,
+          relationship=excluded.relationship, concern=excluded.concern, duration=excluded.duration, updated_at=excluded.updated_at`)
+        .run(session.telegramId, profile.birth_date, profile.birth_time, Number(profile.unknown_time), profile.term_side,
+          profile.place, profile.relationship, profile.concern, profile.duration, updatedAt);
+      return json(res, 200, profilePayload(db.prepare('SELECT * FROM reading_profiles WHERE telegram_id = ?').get(session.telegramId)));
+    }
+
+    if (path === '/api/telegram/profile' && req.method === 'DELETE') {
+      const session = getSession(req);
+      if (!session || session.type !== 'user') return json(res, 401, { error: 'telegram_session_required' });
+      if (!csrfValid(req, session)) return json(res, 403, { error: 'csrf_invalid' });
+      db.prepare('DELETE FROM reading_profiles WHERE telegram_id = ?').run(session.telegramId);
+      return json(res, 200, { deleted: true });
     }
 
     if (path === '/api/telegram/account/delete' && req.method === 'POST') {
       const session = getSession(req);
       if (!session || session.type !== 'user') return json(res, 401, { error: 'telegram_session_required' });
       if (!csrfValid(req, session)) return json(res, 403, { error: 'csrf_invalid' });
-      db.prepare('DELETE FROM users WHERE telegram_id = ?').run(session.telegramId);
+      try {
+        db.exec('BEGIN IMMEDIATE;');
+        db.prepare('DELETE FROM reading_profiles WHERE telegram_id = ?').run(session.telegramId);
+        db.prepare('DELETE FROM users WHERE telegram_id = ?').run(session.telegramId);
+        db.exec('COMMIT;');
+      } catch (error) {
+        try { db.exec('ROLLBACK;'); } catch {}
+        throw error;
+      }
       return json(res, 200, { deleted: true });
     }
 
     if (path === '/api/admin/session' && req.method === 'GET') {
-      return json(res, 200, { authenticated: Boolean(getSession(req, 'admin')) });
+      const session = getSession(req, 'admin');
+      return json(res, 200, { authenticated: Boolean(session), admin: session ? { username: session.username, role: session.role } : null });
     }
 
     if (path === '/api/admin/login' && req.method === 'POST') {
@@ -714,9 +831,22 @@ const server = createServer(async (req, res) => {
     if (path === '/api/admin/overview' && req.method === 'GET') {
       const session = requireAdmin(req, res);
       if (!session) return;
-      const data = overview();
+      const page = Math.max(1, Number.parseInt(url.searchParams.get('page') || '1', 10) || 1);
+      const pageSize = Math.max(1, Math.min(100, Number.parseInt(url.searchParams.get('pageSize') || '50', 10) || 50));
+      const data = overview(page, pageSize);
       data.csrfToken = session.csrf;
       return json(res, 200, data);
+    }
+
+    const adminProfileRoute = path.match(/^\/api\/admin\/users\/(\d{1,20})\/profile$/);
+    if (adminProfileRoute && req.method === 'GET') {
+      const session = requireAdmin(req, res);
+      if (!session) return;
+      if (session.role !== 'owner') return json(res, 403, { error: 'owner_role_required' });
+      const profile = profilePayload(db.prepare('SELECT * FROM reading_profiles WHERE telegram_id = ?').get(adminProfileRoute[1]));
+      if (!profile) return json(res, 404, { error: 'profile_not_found' });
+      writeAudit(session.adminId, 'admin_profile_view', adminProfileRoute[1], clientIp(req));
+      return json(res, 200, profile);
     }
 
     if (path === '/' && req.method === 'GET') {
