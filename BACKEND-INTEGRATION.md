@@ -12,6 +12,16 @@ This workspace contains a front-end prototype only. The API base is supplied at 
 
 The Mini App launch URL or server-side route configuration identifies which approved Bot configuration is expected for that entry point. Telegram `initData` proves the user context when its signature validates; it is not a universal Bot identifier. Never infer trust from a query parameter supplied by the client.
 
+### `GET /api/telegram/account`
+
+Requires the current verified Telegram user session. Returns only that user's saved account record, with exactly these fields: `telegram_id`, `locale`, `source_bot_id`, `first_seen`, `last_seen`, `consent_at`, and `consent_version`. Returns `404` if the authenticated user has not consented or the record was deleted. The response is suitable for the user's JSON export.
+
+### `POST /api/telegram/account/delete`
+
+Requires the verified Telegram user session and `X-CSRF-Token`. Deletes the record matching that session's Telegram ID and returns `{ "deleted": true }`. Missing sessions receive `401`; a missing or invalid CSRF token receives `403`. The endpoint does not accept a target ID from the request body.
+
+Saved records are automatically deleted when `last_seen` is older than `HAKU_RETENTION_DAYS` (default `365`). Cleanup runs once at service startup and every 24 hours. Successful Telegram authentication refreshes `last_seen` for an existing record. This account record excludes birth details, relationship answers, and reading feedback.
+
 ## Admin API
 
 The implementation uses a server-configured admin password and a signed, `HttpOnly` session cookie. Login attempts are rate limited. Admin writes require the session CSRF token; every `/api/admin/*` route checks the server session. Hiding the admin tab in the client is not access control. For a team deployment, replace the single admin password with named staff accounts, role authorization, and an audit trail.
@@ -53,18 +63,18 @@ The UI displays live Bot status as read-only. The active Bot list is configured 
 
 `POST /api/telegram/webhook/:botId` accepts Telegram webhook updates only for a Bot whose `id` exists in `HAKU_BOTS_JSON` and whose `active` value is true. Requests must include `X-Telegram-Bot-Api-Secret-Token`. The expected value is `base64url(HMAC-SHA256(key=HAKU_SESSION_SECRET, message="webhook:" + botId))`; comparison is timing-safe. Unknown or inactive Bots receive `404`; missing or invalid secrets receive `401`. The JSON body limit is 64 KiB.
 
-The handler acknowledges updates with `200 {"ok":true}` and processes them asynchronously. It only replies to `message.text` beginning with `/start` in a private chat (exact `/start`, `/start ` followed by payload, or `/start@...`). Locale is selected from the sender's `language_code` prefix (`km`, `th`, `zh`; all other values use English). Duplicate update IDs are ignored in memory, and each chat is limited to five replies per minute.
+The handler acknowledges updates with `200 {"ok":true}` and processes them asynchronously. It only replies to a `message.text` beginning with `/start` in a private chat (exact `/start`, `/start ` followed by payload, or `/start@...`). Locale is selected from the sender's `language_code` prefix (`km`, `th`, `zh`; all other values use English). Duplicate update IDs are ignored in memory, and each chat is limited to five replies per minute.
 
-The webhook only sends fixed localized welcome copy and an Open Haku button. It does not store or log message content, Telegram user IDs, usernames, or chat IDs, and creates no account record. De-duplication and rate-limit state is in memory and is cleared when the process restarts. Telegram API failures are logged with Bot ID and error type only.
+The webhook only sends the fixed localized welcome copy and an Open Haku button. It does not store or log message content, Telegram user IDs, usernames, or chat IDs, and it creates no account record. The de-duplication and rate-limit state is in memory and is cleared when the process restarts. Telegram API failures are logged with the Bot ID and error type only.
 
-Run `node scripts/set-webhook.mjs` after each deployment or when adding an active Bot; use `--dry-run` to preview. The script also configures the menu button and localized Bot profile copy. `HAKU_TELEGRAM_API_BASE` defaults to `https://api.telegram.org` and usually does not need changing. If a proxy allowlists paths, allow `/api/telegram/webhook/`.
+Register active Bots after each deployment or when adding a Bot with `node scripts/set-webhook.mjs` (use `--dry-run` to preview). The script also configures the menu button and localized Bot profile copy. `HAKU_TELEGRAM_API_BASE` defaults to `https://api.telegram.org` and usually does not need to be changed. The deployment proxy example forwards all routes; if a proxy allowlists paths, allow `/api/telegram/webhook/`.
 
 ## Current storage and limits
 
 - SQLite stores only consented account records: Telegram ID, locale, source Bot, first/last seen, and consent time/version. The comic answers and feedback remain in page memory and are not sent to the server.
 - Sessions are held in process memory. A server restart expires all user and admin sessions.
 - The current server targets one Node process and one persistent SQLite file. Multi-instance operation needs a shared data and session store.
-- Account deletion/export and a scheduled retention policy are not implemented yet; define them before public launch.
+- Users can export or delete their account through the Telegram account endpoints. The retention period is configured with `HAKU_RETENTION_DAYS` and defaults to 365 days since last activity.
 
 ## Multiple Bot availability
 

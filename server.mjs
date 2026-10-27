@@ -34,6 +34,8 @@ const sessionSecret = required('HAKU_SESSION_SECRET', 32);
 const adminPassword = required('HAKU_ADMIN_PASSWORD', 16);
 if (/replace-with/i.test(sessionSecret) || /replace-with/i.test(adminPassword)) throw new Error('Replace the example session secret and admin password before starting');
 const consentVersion = required('HAKU_CONSENT_VERSION', 1);
+const retentionDays = Number(process.env.HAKU_RETENTION_DAYS || 365);
+if (!Number.isSafeInteger(retentionDays) || retentionDays < 1) throw new Error('HAKU_RETENTION_DAYS must be a positive whole number');
 const maxAuthAge = Math.max(60, Math.min(Number(process.env.HAKU_MAX_AUTH_AGE_SECONDS) || 600, 3600));
 const cookieSameSite = (process.env.HAKU_COOKIE_SAMESITE || 'lax').toLowerCase();
 if (!['lax', 'strict', 'none'].includes(cookieSameSite)) throw new Error('HAKU_COOKIE_SAMESITE must be lax, strict, or none');
@@ -99,6 +101,15 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS users_first_seen_idx ON users(first_seen DESC);
   CREATE INDEX IF NOT EXISTS users_last_seen_idx ON users(last_seen DESC);
 `);
+
+function cleanExpiredUsers() {
+  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+  db.prepare('DELETE FROM users WHERE last_seen < ?').run(cutoff);
+}
+
+cleanExpiredUsers();
+const retentionCleanup = setInterval(cleanExpiredUsers, 24 * 60 * 60 * 1000);
+retentionCleanup.unref();
 
 const userUpsert = db.prepare(`
   INSERT INTO users (telegram_id, locale, source_bot_id, first_seen, last_seen, consent_at, consent_version)
@@ -366,6 +377,7 @@ const server = createServer(async (req, res) => {
       const body = await readJson(req);
       const verified = verifyInitData(body.initData);
       if (!verified) return json(res, 401, { error: 'telegram_auth_invalid' });
+      db.prepare('UPDATE users SET last_seen = ? WHERE telegram_id = ?').run(new Date().toISOString(), verified.userId);
       const csrfToken = issueSession(res, { type: 'user', telegramId: verified.userId, botId: verified.bot.id });
       return json(res, 200, {
         user: { id: verified.userId },
@@ -384,6 +396,23 @@ const server = createServer(async (req, res) => {
       const timestamp = new Date().toISOString();
       userUpsert.run(session.telegramId, body.locale, session.botId, timestamp, timestamp, timestamp, consentVersion);
       return json(res, 200, { saved: true, botName: bots.find((bot) => bot.id === session.botId)?.name || session.botId });
+    }
+
+    if (path === '/api/telegram/account' && req.method === 'GET') {
+      const session = getSession(req);
+      if (!session || session.type !== 'user') return json(res, 401, { error: 'telegram_session_required' });
+      const account = db.prepare(`SELECT telegram_id, locale, source_bot_id, first_seen, last_seen, consent_at, consent_version
+        FROM users WHERE telegram_id = ?`).get(session.telegramId);
+      if (!account) return json(res, 404, { error: 'account_not_found' });
+      return json(res, 200, account);
+    }
+
+    if (path === '/api/telegram/account/delete' && req.method === 'POST') {
+      const session = getSession(req);
+      if (!session || session.type !== 'user') return json(res, 401, { error: 'telegram_session_required' });
+      if (!csrfValid(req, session)) return json(res, 403, { error: 'csrf_invalid' });
+      db.prepare('DELETE FROM users WHERE telegram_id = ?').run(session.telegramId);
+      return json(res, 200, { deleted: true });
     }
 
     if (path === '/api/admin/login' && req.method === 'POST') {
@@ -435,4 +464,3 @@ function close() {
 }
 process.on('SIGINT', close);
 process.on('SIGTERM', close);
-
