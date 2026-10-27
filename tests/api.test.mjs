@@ -173,6 +173,7 @@ try {
     'export without a user session returns 401');
 
   const userSession = await createUserSession(userId);
+  assert.match(userSession.cookie, /^haku_session=/, 'Telegram session uses the user cookie name');
   assert.equal((await request('/api/telegram/account/delete', {
     method: 'POST', cookie: userSession.cookie
   })).status, 403, 'delete without CSRF returns 403');
@@ -212,6 +213,9 @@ try {
   assert.equal(ownerLogin.status, 200);
   assert.deepEqual(ownerLogin.body.admin.role, 'owner');
   const adminCookie = ownerLogin.headers.get('set-cookie')?.split(';')[0];
+  assert.match(adminCookie, /^haku_admin_session=/, 'admin session uses a separate cookie name');
+  assert.equal((await request('/api/telegram/account', { cookie: adminCookie })).status, 401,
+    'admin cookie cannot authenticate a Telegram account request');
   const ownerCsrf = ownerLogin.body.csrfToken;
   const viewerLogin = await request('/api/admin/login', {
     method: 'POST', body: { username: 'viewer', password: viewerPassword }

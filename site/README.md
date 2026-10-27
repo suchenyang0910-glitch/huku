@@ -54,9 +54,7 @@ The self-hosted WOFF2 files are subsets for the scripts used by the site: variab
 
 ## Production deployment by operations
 
-Do not replace the existing `truesignal.cc` site until its current owner and use have been confirmed. The server has had an HTTP service on port 80 returning `401`; identify who owns it, whether it is still used, and how it is configured before changing any Nginx virtual host. Back up the existing website files and Nginx configuration first.
-
-The example Nginx file is `deploy/nginx-truesignal-site.conf`. Review its server names and install a Cloudflare Origin Certificate for the hostname at the certificate paths shown in that file. Validate that no other enabled Nginx file claims the same hostnames. Keep Cloudflare in Full (strict) mode. Only enable the example after the existing site's owner approves the replacement and the origin certificate is installed.
+The production host uses the existing systemd-managed Caddy 2.6.2 service. Back up `/etc/caddy/Caddyfile` and the current website before changing either. Merge only the `truesignal.cc, www.truesignal.cc` block from `deploy/Caddyfile.example`; do not replace unrelated site blocks. Caddy uses automatic HTTPS, and Cloudflare remains in Full (strict) mode.
 
 Release-based copy and symlink switch (run from a reviewed repository checkout on the server):
 
@@ -66,25 +64,25 @@ sudo mkdir -p "/var/www/truesignal/releases/$release"
 sudo cp -a site/dist/. "/var/www/truesignal/releases/$release/"
 sudo ln -s "/var/www/truesignal/releases/$release" /var/www/truesignal/current.new
 sudo mv -Tf /var/www/truesignal/current.new /var/www/truesignal/current
-sudo nginx -t
-sudo systemctl reload nginx
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl reload caddy
 ```
 
-The Nginx configuration serves `/var/www/truesignal/current`, uses short caching for HTML and long caching for fonts and images, and falls through to the static 404 page for unknown paths. Verify `/`, `/km/`, `/th/`, `/zh/`, all privacy and terms routes, the TLS certificate, and response headers after the approved change.
+The Caddy configuration serves `/var/www/truesignal/current`, uses short caching for HTML and immutable caching for assets, and serves the static 404 page for unknown paths. Verify `/`, `/km/`, `/th/`, `/zh/`, all privacy and terms routes, the automatic TLS certificate, and response headers after the approved change.
 
 ### Roll back
 
-Keep the previous release directory and record its path before switching. To roll back, atomically point `current` to that release, then validate and reload Nginx:
+Keep the previous release directory and record its path before switching. To roll back, atomically point `current` to that release, then validate and reload Caddy:
 
 ```sh
 sudo ln -s /var/www/truesignal/releases/<PREVIOUS_RELEASE> /var/www/truesignal/current.rollback
 sudo mv -Tf /var/www/truesignal/current.rollback /var/www/truesignal/current
-sudo nginx -t
-sudo systemctl reload nginx
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl reload caddy
 ```
 
 If a previous site configuration was replaced, restore its backup as well. Do not delete the backup or prior release until the rollback window has closed.
 
 ## Configuration still to complete
 
-`site/site.config.json` currently leaves `contactEmail` blank, so pages show `[CONTACT_EMAIL]`. `miniAppShortName` is intentionally blank and the launch link therefore uses `https://t.me/HakuStoryBot?startapp`. Before public launch, the operator should confirm the chosen Bot deep link and fill the contact email. The terms page also visibly marks `[OPERATOR_LEGAL_DETAILS]` and `[GOVERNING_LAW]` for legal review; no registration or jurisdiction information has been invented.
+`contactEmail` is `hello@truesignal.cc`, and the blank `miniAppShortName` intentionally produces `https://t.me/HakuStoryBot?startapp`. Legal operator and governing-law fields remain unset and are omitted from generated pages instead of exposing placeholders. Counsel should supply them when confirmed; no registration or jurisdiction information has been invented.

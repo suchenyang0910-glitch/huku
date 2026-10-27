@@ -8,7 +8,7 @@ const LOCALES = ['en', 'km', 'th', 'zh'];
 const PAGES = ['home', 'privacy', 'terms'];
 const CONFIG_PATH = join(ROOT, 'site.config.json');
 const GENERATED = join(ROOT, 'assets-src', 'generated');
-const CONFIG_KEYS = ['botUsername', 'miniAppShortName', 'operatorName', 'contactEmail', 'retentionDays', 'siteOrigin'];
+const CONFIG_KEYS = ['botUsername', 'miniAppShortName', 'operatorName', 'contactEmail', 'operatorLegalDetails', 'governingLaw', 'retentionDays', 'siteOrigin'];
 
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -103,8 +103,15 @@ function legalContent(copy, page, config) {
     `<section><h2>${escapeHtml(copy.termsTelegramTitle)}</h2><p>${escapeHtml(copy.termsTelegramText)}</p></section>`,
     `<section><h2>${escapeHtml(copy.termsChangesTitle)}</h2><p>${escapeHtml(copy.termsChangesText)}</p></section>`
   ];
-  const placeholders = `<div class="terms-placeholders"><p>${escapeHtml(copy.operatorDetails).replace('[OPERATOR_LEGAL_DETAILS]', '<span class="placeholder">[OPERATOR_LEGAL_DETAILS]</span>')}</p><p>${escapeHtml(copy.governingLaw).replace('[GOVERNING_LAW]', '<span class="placeholder">[GOVERNING_LAW]</span>')}</p></div>`;
-  return `<article class="page-main"><h1>${escapeHtml(copy.termsPageTitle)}</h1><p class="page-intro">${escapeHtml(copy.termsIntro)}</p><div class="prose">${parts.join('')}<section>${placeholders}</section></div></article>`;
+  const details = [];
+  if (String(config.operatorLegalDetails || '').trim()) {
+    details.push(`<p>${escapeHtml(copy.operatorDetails).replace('[OPERATOR_LEGAL_DETAILS]', escapeHtml(config.operatorLegalDetails))}</p>`);
+  }
+  if (String(config.governingLaw || '').trim()) {
+    details.push(`<p>${escapeHtml(copy.governingLaw).replace('[GOVERNING_LAW]', escapeHtml(config.governingLaw))}</p>`);
+  }
+  const legalDetails = details.length ? `<section><div class="terms-placeholders">${details.join('')}</div></section>` : '';
+  return `<article class="page-main"><h1>${escapeHtml(copy.termsPageTitle)}</h1><p class="page-intro">${escapeHtml(copy.termsIntro)}</p><div class="prose">${parts.join('')}${legalDetails}</div></article>`;
 }
 
 async function loadLocale(locale) {
@@ -203,6 +210,8 @@ if (!String(config.contactEmail || '').trim()) missing.push('contactEmail — pa
 if (!String(config.operatorName || '').trim()) missing.push('operatorName — footer shows [OPERATOR_NAME]');
 if (!String(config.botUsername || '').trim()) missing.push('botUsername — launch links show [BOT_USERNAME]');
 if (!String(config.miniAppShortName || '').trim()) missing.push('miniAppShortName — optional; using https://t.me/{botUsername}?startapp');
+if (!String(config.operatorLegalDetails || '').trim()) missing.push('operatorLegalDetails — optional; operator details row is hidden');
+if (!String(config.governingLaw || '').trim()) missing.push('governingLaw — optional; governing law row is hidden');
 if (missing.length) {
   console.warn('Configuration values not filled:');
   for (const item of missing) console.warn(`- ${item}`);

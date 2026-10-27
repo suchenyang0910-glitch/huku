@@ -2,7 +2,9 @@
   "botUsername": "HakuStoryBot",
   "miniAppShortName": "",
   "operatorName": "TrueSignal",
-  "contactEmail": "",
+  "contactEmail": "hello@truesignal.cc",
+  "operatorLegalDetails": "",
+  "governingLaw": "",
   "retentionDays": 365,
   "siteOrigin": "https://truesignal.cc"
 }
