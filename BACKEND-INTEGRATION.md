@@ -7,26 +7,30 @@ The browser client and Node API are served together by default. A separate API b
 1. On open, the client reads the displayed user ID from Telegram WebApp data. Treat `initDataUnsafe` as display-only and untrusted.
 2. When `HAKU_API_BASE` is configured, the client sends the raw `Telegram.WebApp.initData` to `POST /api/telegram/auth` automatically. The server validates Telegram's signature using the expected Bot secret, checks `auth_date` freshness, and checks the validated user ID against the client-displayed ID.
 3. Successful verification creates a short-lived server session using a `Secure`, `HttpOnly`, `SameSite` cookie. Return the verified user and a CSRF token; do not return Bot secrets.
-4. The Save account checkbox is selected by default only for a verified, unsaved user, but page load and successful authentication never save an account. Activating Begin the story while the checkbox remains selected calls `POST /api/telegram/consent` exactly once with `{ "accepted": true, "locale": "en|vi|zh|km|th" }` and the CSRF token, then opens the questionnaire. If the user clears the checkbox, the reading starts without calling the consent endpoint. A consent error is shown but does not block reading. Record consent version and time, and reject calls without an authenticated session or explicit acceptance. My account (`#/me`) provides the same explicit save action for a verified, unsaved user.
-5. Retain only Telegram ID, selected locale, first/last-seen timestamps, consent state/version, and the approved Bot source ID needed for service delivery. Do not retain private reading answers in the account table. Define a deletion and retention policy before launch.
+4. The account and reading-profile checkbox is selected by default for a verified user without current v4 consent, but page load and successful authentication never save. Activating Begin the story while selected calls `POST /api/telegram/consent` exactly once with `{ "accepted": true, "locale": "en|vi|zh|km|th" }` and the CSRF token. Clearing it starts without saving; errors do not block reading. My account (`#/me`) provides the same explicit renewal action.
+5. Store account identity fields in `users` and the approved questionnaire fields in the separate STRICT `reading_profiles` table. Only consent version `2026-10-28-v4-reading-profile` may write a profile. Account deletion and retention cleanup explicitly delete the profile before the user row.
 
 The Mini App launch URL or server-side route configuration identifies which approved Bot configuration is expected for that entry point. Telegram `initData` proves the user context when its signature validates; it is not a universal Bot identifier. Never infer trust from a query parameter supplied by the client.
 
 ### `GET /api/telegram/account`
 
-Requires the current verified Telegram user session. Returns only that user's saved account record, with exactly these fields: `telegram_id`, `locale`, `source_bot_id`, `first_seen`, `last_seen`, `consent_at`, and `consent_version`. Returns `404` if the authenticated user has not consented or the record was deleted. The response is suitable for the user's JSON export.
+Requires the current verified Telegram user session. Returns that user's saved account fields plus `profile` (the complete saved reading profile or `null`). Returns `404` if the account was not saved or was deleted. The response is suitable for the user's JSON export.
+
+### `GET|PUT|DELETE /api/telegram/profile`
+
+All methods require the verified Telegram session; `PUT` and `DELETE` also require its CSRF token. `GET` returns the saved profile or `404` and writes no audit entry. `PUT` is an all-fields replacement and returns `409 consent_outdated` unless the account's consent version equals the configured v4 version. It accepts `birth_date`, nullable `birth_time`, `unknown_time`, `term_side`, `place`, and the integer `relationship`, `concern`, and `duration` indexes. The server validates real dates from 1930 through today, 24-hour time, allowed place/term values, option bounds, and a 4KB body limit. `DELETE` removes only the profile.
 
 ### `POST /api/telegram/account/delete`
 
 Requires the verified Telegram user session and `X-CSRF-Token`. Deletes the record matching that session's Telegram ID and returns `{ "deleted": true }`. Missing sessions receive `401`; a missing or invalid CSRF token receives `403`. The endpoint does not accept a target ID from the request body.
 
-The production consent version is `2026-10-28-v3-start-reading`, reflecting the Begin the story save trigger and revised privacy explanation. Existing rows retain the version recorded when they were saved.
+The production consent version is `2026-10-28-v4-reading-profile`, reflecting that consent now includes the listed reading answers. Existing rows retain their version and must renew before a profile can be written.
 
-Saved records are automatically deleted when `last_seen` is older than `HAKU_RETENTION_DAYS` (default `365`). Cleanup runs once at service startup and every 24 hours. Successful Telegram authentication refreshes `last_seen` for an existing record. This account record excludes birth details, relationship answers, and reading feedback.
+Saved accounts and their reading profiles are automatically deleted when `last_seen` is older than `HAKU_RETENTION_DAYS` (default `365`). Cleanup runs at startup and every 24 hours. Successful Telegram authentication refreshes `last_seen`. Manga feedback remains session-only.
 
 ## Admin API
 
-The admin API uses named accounts and a signed, `HttpOnly` session cookie. Passwords are stored as salted scrypt hashes. Login attempts are rate limited. Owners can perform administrative writes; viewers can read the overview only. Admin writes require the session CSRF token, and authorization is enforced by the server. Both roles can log out.
+The admin API uses named accounts and a signed, `HttpOnly` session cookie. Passwords are stored as salted scrypt hashes. Login attempts are rate limited. Both roles can read the paginated overview and its `hasProfile` flag. Only owners can call `GET /api/admin/users/:telegramId/profile`; each successful view writes `admin_profile_view` with target Telegram ID and client IP. Viewers receive `403`. Admin writes require the session CSRF token. Both roles can log out.
 
 Set `HAKU_ADMIN_ORIGIN` to the exact admin origin (production: `https://admin.truesignal.cc`). When set, Node returns `404` for every `/api/admin/*` request whose Host does not match that origin. The admin session uses the host-only `haku_admin_session` cookie; Telegram sessions use the separate `haku_session` cookie. Neither cookie sets a `Domain` attribute.
 
@@ -87,7 +91,7 @@ Register active Bots after each deployment or when adding a Bot with `node scrip
 
 ## Current storage and limits
 
-- SQLite stores only consented account records: Telegram ID, locale, source Bot, first/last seen, and consent time/version. The comic answers and feedback remain in page memory and are not sent to the server.
+- SQLite stores consented accounts and, only under current v4 consent, the separate reading profile used for prefill and story generation. Manga feedback remains in page memory.
 - Sessions are held in process memory. A server restart expires all user and admin sessions.
 - The current server targets one Node process and one persistent SQLite file. Multi-instance operation needs a shared data and session store.
 - Users can export or delete their account through the Telegram account endpoints. The retention period is configured with `HAKU_RETENTION_DAYS` and defaults to 365 days since last activity.

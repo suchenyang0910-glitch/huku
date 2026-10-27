@@ -12,13 +12,14 @@ Haku is a Telegram Mini App for a quiet, illustrated self-reflection reading. Th
 | My account | `/#/me` | Verified Telegram user's header entry or direct URL | In-page Back, browser Back, Telegram BackButton |
 | Admin | Admin host | Direct URL | Admin logout |
 
-My account owns identity display, verification/saved status, Telegram ID copy, privacy details, account export, save, and delete. Home owns the Begin the story action. A verified, unsaved user also sees the default-selected Save account control below it; saved, unverified, and non-Telegram users do not.
+My account owns identity display, verification/saved status, Telegram ID copy, privacy details, account export/delete, and reading-profile edit/delete. Home owns Begin the story. A verified user without current v4 consent sees the default-selected account and reading-profile consent control; users with current consent, unverified users, and non-Telegram users do not.
 
 ## Consent and mutation states
 
 - Loading or verifying a Telegram session never creates an account record.
-- Begin the story calls the consent endpoint exactly once only for a verified, unsaved user while Save account remains selected. Clearing it results in no write. A failed save shows an error and still opens the questionnaire.
-- Save account is available to verified, unsaved users in My account.
+- Begin the story calls the consent endpoint exactly once only for a verified user without current v4 consent while Save remains selected. Clearing it results in no account/profile write. A failed save shows an error and still opens the questionnaire.
+- Save or renew consent is available to verified users without current v4 consent in My account.
+- Completing the final question saves one complete reading profile only with current v4 consent. Failure is non-blocking. A saved profile prefills the questionnaire and can be edited or deleted from My account.
 - Account deletion uses the localized app dialog, traps focus, disables the destructive action while pending, keeps failures in context, and restores focus on close.
 - Export and delete are available only for a verified, saved account.
 

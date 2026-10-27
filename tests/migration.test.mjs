@@ -110,11 +110,18 @@ try {
 
   const afterFirst = new DatabaseSync(dbPath);
   const firstTable = afterFirst.prepare("SELECT sql, rootpage FROM sqlite_master WHERE type = 'table' AND name = 'users'").get();
+  const firstProfileTable = afterFirst.prepare("SELECT sql, rootpage FROM sqlite_master WHERE type = 'table' AND name = 'reading_profiles'").get();
   const rows = afterFirst.prepare('SELECT telegram_id, locale, source_bot_id, consent_version FROM users ORDER BY telegram_id').all();
   assert.equal(rows.length, 9, 'migration preserves four rows and accepts five new locale rows');
   assert.deepEqual(rows.slice(0, 4).map((row) => ({ ...row })), ['en', 'km', 'th', 'zh'].map((locale, index) => ({ telegram_id: String(910000000 + index), locale, source_bot_id: 'legacy-bot', consent_version: 'legacy-v1' })), 'legacy rows are unchanged');
   assert.match(firstTable.sql, /['"]vi['"]/, 'migrated CHECK constraint includes vi');
   assert.throws(() => afterFirst.prepare('UPDATE users SET locale = ? WHERE telegram_id = ?').run('fr', '910000000'), /CHECK constraint failed/, 'unknown locales remain rejected');
+  assert.match(firstProfileTable.sql, /STRICT/i, 'reading_profiles is created as a STRICT table');
+  afterFirst.prepare(`INSERT INTO reading_profiles
+    (telegram_id, birth_date, birth_time, unknown_time, term_side, place, relationship, concern, duration, updated_at)
+    VALUES ('920000000', '1990-05-15', '12:00', 0, '', 'vn', 1, 2, 3, ?)`)
+    .run(timestamp);
+  const firstProfileSnapshot = JSON.stringify(afterFirst.prepare('SELECT * FROM reading_profiles').all());
   const firstSnapshot = JSON.stringify(rows);
   afterFirst.close();
 
@@ -122,8 +129,12 @@ try {
   await stop();
   const afterSecond = new DatabaseSync(dbPath);
   const secondTable = afterSecond.prepare("SELECT sql, rootpage FROM sqlite_master WHERE type = 'table' AND name = 'users'").get();
+  const secondProfileTable = afterSecond.prepare("SELECT sql, rootpage FROM sqlite_master WHERE type = 'table' AND name = 'reading_profiles'").get();
   assert.deepEqual(secondTable, firstTable, 'second startup does not rebuild the migrated table');
+  assert.deepEqual(secondProfileTable, firstProfileTable, 'second startup does not rebuild reading_profiles');
   assert.equal(JSON.stringify(afterSecond.prepare('SELECT telegram_id, locale, source_bot_id, consent_version FROM users ORDER BY telegram_id').all()), firstSnapshot, 'second startup does not alter data');
+  assert.equal(JSON.stringify(afterSecond.prepare('SELECT * FROM reading_profiles').all()), firstProfileSnapshot,
+    'second startup preserves reading profile data');
   afterSecond.close();
 
   console.log('migration.test.mjs: legacy data preserved, five locales accepted, migration is idempotent.');
