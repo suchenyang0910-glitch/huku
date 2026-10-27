@@ -1,0 +1,67 @@
+# Minimum tested version: Caddy 2.8.4 or newer.
+# Check the active binary with `caddy version` (or `docker exec <container> caddy version`).
+# Cloudflare IP ranges below are copied from:
+# https://www.cloudflare.com/ips-v4/
+# https://www.cloudflare.com/ips-v6/
+# Keep this list in sync with those official lists and the firewall rules.
+
+{
+	servers {
+		# Only connections from these Cloudflare proxy networks may use
+		# CF-Connecting-IP as the visitor IP. Other peers use their socket IP.
+		trusted_proxies static 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+		client_ip_headers CF-Connecting-IP
+	}
+}
+
+mini.truesignal.cc {
+	tls /etc/caddy/certs/truesignal-origin.pem /etc/caddy/certs/truesignal-origin.key
+	encode zstd gzip
+
+	reverse_proxy 127.0.0.1:4173 {
+		# Replace any incoming X-Forwarded-For value with Caddy's trusted client IP.
+		header_up X-Forwarded-For {client_ip}
+		header_up X-Forwarded-Proto https
+	}
+}
+
+truesignal.cc, www.truesignal.cc {
+	tls /etc/caddy/certs/truesignal-origin.pem /etc/caddy/certs/truesignal-origin.key
+	encode zstd gzip
+
+	@www host www.truesignal.cc
+	redir @www https://truesignal.cc{uri} 301
+
+	root * /var/www/truesignal/current
+	file_server
+
+	header {
+		Content-Security-Policy "default-src 'self'; img-src 'self'; font-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+
+	@html path / /index.html /km/ /km/index.html /th/ /th/index.html /zh/ /zh/index.html /privacy/ /privacy/index.html /terms/ /terms/index.html /km/privacy/ /km/privacy/index.html /km/terms/ /km/terms/index.html /th/privacy/ /th/privacy/index.html /th/terms/ /th/terms/index.html /zh/privacy/ /zh/privacy/index.html /zh/terms/ /zh/terms/index.html /404.html
+	header @html Cache-Control "public, max-age=300"
+
+	@assets path_regexp assets \.(woff2|webp|png|jpe?g|ico|svg)$
+	header @assets Cache-Control "public, max-age=604800"
+	# Asset names are currently unhashed, so cache them for 7 days. If filenames
+	# gain content hashes, this can be changed to 1 year with `immutable`.
+
+	handle_errors 404 {
+		rewrite /404.html
+		file_server
+	}
+}
+
+# Optional Cloudflare Authenticated Origin Pulls (AOP): enable AOP for the
+# corresponding hostnames in Cloudflare and install the matching Cloudflare
+# Origin Pull CA at /etc/caddy/certs/origin-pull-ca.pem. Add this block inside
+# each `tls` directive above; do not enable it before Cloudflare is configured.
+#
+# client_auth {
+# 	mode require_and_verify
+# 	trust_pool file /etc/caddy/certs/origin-pull-ca.pem
+# }
+
