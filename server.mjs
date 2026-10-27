@@ -4,6 +4,7 @@ import { readFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
+import { BOT_COPY } from './bot-copy.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 loadEnv(resolve(ROOT, '.env'));
@@ -59,10 +60,23 @@ try { publicOriginUrl = new URL(publicOrigin); } catch { throw new Error('HAKU_P
 if (!['http:', 'https:'].includes(publicOriginUrl.protocol) || publicOriginUrl.origin !== publicOrigin) throw new Error('HAKU_PUBLIC_ORIGIN must not include a path, query, or fragment');
 if (process.env.NODE_ENV === 'production' && publicOriginUrl.protocol !== 'https:') throw new Error('Production HAKU_PUBLIC_ORIGIN must use HTTPS');
 const allowedOrigins = new Set([publicOrigin, ...(process.env.HAKU_ALLOWED_ORIGINS || '').split(',').map((origin) => origin.trim())].filter(Boolean));
+const telegramApiBase = (process.env.HAKU_TELEGRAM_API_BASE || 'https://api.telegram.org').replace(/\/+$/, '');
 const secureCookie = process.env.NODE_ENV === 'production' || cookieSameSite === 'none';
 const trustProxy = process.env.HAKU_TRUSTED_PROXY === 'true';
 const sessions = new Map();
 const attempts = new Map();
+const webhookUpdateIds = new Set();
+const webhookUpdateOrder = [];
+const welcomeReplyTimes = new Map();
+const webhookRateCleanup = setInterval(() => {
+  const cutoff = Date.now() - 60_000;
+  for (const [key, timestamps] of welcomeReplyTimes) {
+    const recent = timestamps.filter((timestamp) => timestamp > cutoff);
+    if (recent.length) welcomeReplyTimes.set(key, recent);
+    else welcomeReplyTimes.delete(key);
+  }
+}, 60_000);
+webhookRateCleanup.unref();
 const SESSION_MS = 12 * 60 * 60 * 1000;
 const ADMIN_SESSION_MS = 8 * 60 * 60 * 1000;
 const RATE_WINDOW_MS = 15 * 60 * 1000;
@@ -194,6 +208,54 @@ function csrfValid(req, session) {
   return typeof sent === 'string' && safeEqual(sent, session.csrf);
 }
 
+function rememberWebhookUpdate(updateId) {
+  if (webhookUpdateIds.has(updateId)) return false;
+  webhookUpdateIds.add(updateId);
+  webhookUpdateOrder.push(updateId);
+  if (webhookUpdateOrder.length > 1000) webhookUpdateIds.delete(webhookUpdateOrder.shift());
+  return true;
+}
+
+function allowWelcomeReply(chatId) {
+  const now = Date.now();
+  const key = createHmac('sha256', sessionSecret).update('welcome-rate:' + String(chatId)).digest('base64url');
+  const recent = (welcomeReplyTimes.get(key) || []).filter((timestamp) => now - timestamp < 60_000);
+  if (recent.length >= 5) { welcomeReplyTimes.set(key, recent); return false; }
+  recent.push(now);
+  welcomeReplyTimes.set(key, recent);
+  return true;
+}
+
+async function sendWelcomeReply(bot, chatId, locale) {
+  try {
+    const response = await fetch(telegramApiBase + '/bot' + bot.token + '/sendMessage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: BOT_COPY[locale].welcome,
+        reply_markup: {
+          inline_keyboard: [[{ text: BOT_COPY[locale].button, web_app: { url: publicOrigin } }]]
+        }
+      }),
+      signal: AbortSignal.timeout(10_000)
+    });
+    if (!response.ok) {
+      const error = new Error();
+      error.name = 'TelegramApiError';
+      throw error;
+    }
+    const result = await response.json();
+    if (result?.ok !== true) {
+      const error = new Error();
+      error.name = 'TelegramApiError';
+      throw error;
+    }
+  } catch (error) {
+    console.warn('Telegram welcome reply failed', bot.id, error?.name || 'Error');
+  }
+}
+
 function verifyInitData(initData) {
   if (typeof initData !== 'string' || initData.length < 20 || initData.length > 16_384) return null;
   const params = new URLSearchParams(initData);
@@ -271,6 +333,34 @@ const server = createServer(async (req, res) => {
   try {
     if (path === '/api/health' && req.method === 'GET') return json(res, 200, { ok: true });
 
+    const webhookRoute = path.match(/^\/api\/telegram\/webhook\/([a-zA-Z0-9_-]{2,64})$/);
+    if (webhookRoute && req.method === 'POST') {
+      const botId = webhookRoute[1];
+      const bot = bots.find((item) => item.id === botId && item.active);
+      if (!bot) return json(res, 404, { error: 'bot_not_found' });
+      const suppliedSecret = req.headers['x-telegram-bot-api-secret-token'];
+      if (typeof suppliedSecret !== 'string' || !safeEqual(suppliedSecret, signature('webhook:' + botId))) {
+        return json(res, 401, { error: 'webhook_secret_invalid' });
+      }
+      const update = await readJson(req, 64 * 1024);
+      if (!update || !Number.isSafeInteger(update.update_id)) return json(res, 200, { ok: true });
+      if (!rememberWebhookUpdate(update.update_id)) return json(res, 200, { ok: true });
+      const message = update.message;
+      const text = typeof message?.text === 'string' ? message.text : '';
+      if (message?.chat?.type !== 'private' || !message.chat.id ||
+          !(text === '/start' || text.startsWith('/start ') || text.startsWith('/start@'))) {
+        return json(res, 200, { ok: true });
+      }
+      if (!allowWelcomeReply(message.chat.id)) return json(res, 200, { ok: true });
+      const language = typeof message.from?.language_code === 'string'
+        ? message.from.language_code.toLowerCase().split(/[-_]/)[0]
+        : 'en';
+      const locale = Object.hasOwn(BOT_COPY, language) ? language : 'en';
+      json(res, 200, { ok: true });
+      setImmediate(() => { void sendWelcomeReply(bot, message.chat.id, locale); });
+      return;
+    }
+
     if (path === '/api/telegram/auth' && req.method === 'POST') {
       if (!rateLimit(req, 'telegram-auth', 40, 5 * 60 * 1000)) return json(res, 429, { error: 'rate_limited' });
       const body = await readJson(req);
@@ -345,3 +435,4 @@ function close() {
 }
 process.on('SIGINT', close);
 process.on('SIGTERM', close);
+
