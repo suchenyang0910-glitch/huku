@@ -21,13 +21,21 @@ function compareShape(expected, actual, path) {
 for (const locale of ['vi', 'zh', 'km', 'th']) {
   for (const name of ['T', 'F', 'A']) compareShape(copy[name].en, copy[name][locale], `${name}.${locale}`);
 }
-assert.match(html, /<option value="en">[^<]+<\/option><option value="vi">Tiếng Việt<\/option><option value="zh">[^<]+<\/option><option value="km">[^<]+<\/option><option value="th">[^<]+<\/option>/, 'language menu order is en, vi, zh, km, th');
+assert.match(html, /data-language="en">English<\/button><button[^>]+data-language="vi">Tiếng Việt<\/button><button[^>]+data-language="zh">简体中文<\/button><button[^>]+data-language="km">ខ្មែរ<\/button><button[^>]+data-language="th">ไทย<\/button>/, 'language menu order is en, vi, zh, km, th');
 assert.match(html, /tgLanguage\.startsWith\('vi'\)\?'vi'/, 'Telegram vi and vi-* languages default to Vietnamese');
 assert.match(html, /DEFAULT_PLACE=\{en:'kh',vi:'vn',zh:'cn',km:'kh',th:'th'\}/, 'Vietnam is the Vietnamese locale default birthplace');
 assert.match(html, /localeName=\{en:'English',vi:'Tiếng Việt',zh:'中文',km:'ខ្មែរ',th:'ไทย'\}/, 'admin labels Vietnamese accounts in the requested order');
 assert.match(html, /family=Be\+Vietnam\+Pro:wght@400;500;600;700/, 'Mini App requests the required Be Vietnam Pro weights');
 assert.match(html, /:lang\(vi\)\{--sans:"Be Vietnam Pro",/, 'Mini App Vietnamese body text prefers Be Vietnam Pro');
 assert.match(html, /id="consent" type="checkbox" checked/, 'Save account is selected by default');
+for (const locale of ['en', 'vi', 'zh', 'km', 'th']) {
+  assert.ok(copy.T[locale].startConsentText, `T.${locale}.startConsentText is present`);
+  assert.ok(copy.T[locale].languageMenuLabel, `T.${locale}.languageMenuLabel is present`);
+}
+assert.match(html, /id="start-reading"[\s\S]+id="consent-panel"[\s\S]+class="moon-art"/, 'home orders start action, optional consent, then illustration');
+assert.doesNotMatch(html, /id="continue"/, 'standalone Continue with Telegram action is removed');
+assert.match(html, /function beginReading\(\)[\s\S]+saveOwnAccount\(button,'startReading'\)[\s\S]+startReading\(\)/, 'start action attempts consent before reading without blocking the reading call');
+assert.match(html, /function syncTelegramMainButton\(\)[\s\S]+button\.setText\(tr\('startReading'\)\)/, 'Telegram MainButton shares the localized start action');
 assert.match(html, /id="user-entry"[\s\S]+id="me-view"/, 'header account entry and My account view are present');
 assert.match(html, /location\.hash==='\#\/me'/, 'My account uses the #/me route');
 assert.equal((html.match(/\/api\/telegram\/consent/g) || []).length, 1,
