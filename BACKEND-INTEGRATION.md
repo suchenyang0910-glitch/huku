@@ -49,6 +49,16 @@ Returns only records the current staff role may view:
 
 The UI displays live Bot status as read-only. The active Bot list is configured through `HAKU_BOTS_JSON` and takes effect after a server restart. Keep Bot tokens in server environment or secret storage. Do not add a client-side token field.
 
+## Telegram Bot webhook
+
+`POST /api/telegram/webhook/:botId` accepts Telegram webhook updates only for a Bot whose `id` exists in `HAKU_BOTS_JSON` and whose `active` value is true. Requests must include `X-Telegram-Bot-Api-Secret-Token`. The expected value is `base64url(HMAC-SHA256(key=HAKU_SESSION_SECRET, message="webhook:" + botId))`; comparison is timing-safe. Unknown or inactive Bots receive `404`; missing or invalid secrets receive `401`. The JSON body limit is 64 KiB.
+
+The handler acknowledges updates with `200 {"ok":true}` and processes them asynchronously. It only replies to `message.text` beginning with `/start` in a private chat (exact `/start`, `/start ` followed by payload, or `/start@...`). Locale is selected from the sender's `language_code` prefix (`km`, `th`, `zh`; all other values use English). Duplicate update IDs are ignored in memory, and each chat is limited to five replies per minute.
+
+The webhook only sends fixed localized welcome copy and an Open Haku button. It does not store or log message content, Telegram user IDs, usernames, or chat IDs, and creates no account record. De-duplication and rate-limit state is in memory and is cleared when the process restarts. Telegram API failures are logged with Bot ID and error type only.
+
+Run `node scripts/set-webhook.mjs` after each deployment or when adding an active Bot; use `--dry-run` to preview. The script also configures the menu button and localized Bot profile copy. `HAKU_TELEGRAM_API_BASE` defaults to `https://api.telegram.org` and usually does not need changing. If a proxy allowlists paths, allow `/api/telegram/webhook/`.
+
 ## Current storage and limits
 
 - SQLite stores only consented account records: Telegram ID, locale, source Bot, first/last seen, and consent time/version. The comic answers and feedback remain in page memory and are not sent to the server.
