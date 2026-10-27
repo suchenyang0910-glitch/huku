@@ -711,7 +711,7 @@ const server = createServer(async (req, res) => {
       if (!['en', 'vi', 'zh', 'km', 'th'].includes(body.locale)) return json(res, 400, { error: 'locale_invalid' });
       const timestamp = new Date().toISOString();
       userUpsert.run(session.telegramId, body.locale, session.botId, timestamp, timestamp, timestamp, consentVersion);
-      return json(res, 200, { saved: true, botName: bots.find((bot) => bot.id === session.botId)?.name || session.botId });
+      return json(res, 200, { saved: true, consent_current: true, botName: bots.find((bot) => bot.id === session.botId)?.name || session.botId });
     }
 
     if (path === '/api/telegram/account' && req.method === 'GET') {
@@ -722,7 +722,7 @@ const server = createServer(async (req, res) => {
       if (!account) return json(res, 404, { error: 'account_not_found' });
       if (url.searchParams.get('export') === '1') writeAudit(null, 'account_export', 'self-service-account', clientIp(req));
       const profile = profilePayload(db.prepare('SELECT * FROM reading_profiles WHERE telegram_id = ?').get(session.telegramId));
-      return json(res, 200, { ...account, profile });
+      return json(res, 200, { ...account, consent_current: account.consent_version === consentVersion, profile });
     }
 
     if (path === '/api/telegram/profile' && req.method === 'GET') {

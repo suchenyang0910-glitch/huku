@@ -175,7 +175,7 @@ try {
   assert.equal((await request('/api/telegram/profile')).status, 401,
     'profile read without a user session returns 401');
 
-  const userSession = await createUserSession(userId);
+  let userSession = await createUserSession(userId);
   assert.match(userSession.cookie, /^haku_session=/, 'Telegram session uses the user cookie name');
   assert.equal((await request('/api/telegram/account', { cookie: userSession.cookie })).status, 404,
     'successful Telegram verification does not create a saved account');
@@ -188,6 +188,9 @@ try {
     body: { accepted: true, locale: 'en' }
   });
   assert.equal(consent.status, 200, 'user consents to saving account');
+  assert.equal(consent.body.consent_current, true, 'consent response confirms the configured version is current');
+  assert.equal((await request('/api/telegram/account', { cookie: userSession.cookie })).body.consent_current, true,
+    'account response derives current consent from the server version');
 
   const sampleProfile = {
     birth_date: '1990-05-15', birth_time: '23:30', unknown_time: false, term_side: '', place: 'cn',
@@ -213,16 +216,26 @@ try {
     rawBody: JSON.stringify({ ...sampleProfile, padding: 'x'.repeat(5000) })
   })).status, 413, 'profile request body is limited to 4KB');
 
-  const outdatedDb = new DatabaseSync(dbPath);
-  outdatedDb.prepare("UPDATE users SET consent_version = 'legacy-v3' WHERE telegram_id = ?").run(userId);
-  outdatedDb.close();
+  const renewedConsentVersion = 'api-test-v2';
+  await stopServer();
+  childEnv = { ...childEnv, HAKU_CONSENT_VERSION: renewedConsentVersion };
+  await startServer();
+  userSession = await createUserSession(userId);
+  const outdatedAccount = await request('/api/telegram/account', { cookie: userSession.cookie });
+  assert.equal(outdatedAccount.status, 200);
+  assert.equal(outdatedAccount.body.consent_current, false,
+    'changing the configured version marks an existing user consent as outdated after restart');
   assert.deepEqual(await request('/api/telegram/profile', {
     method: 'PUT', cookie: userSession.cookie, csrf: userSession.csrf, body: sampleProfile
   }).then(({ status, body }) => ({ status, body })), { status: 409, body: { error: 'consent_outdated' } },
   'old consent cannot save a reading profile');
-  assert.equal((await request('/api/telegram/consent', {
+  const renewedConsent = await request('/api/telegram/consent', {
     method: 'POST', cookie: userSession.cookie, csrf: userSession.csrf, body: { accepted: true, locale: 'en' }
-  })).status, 200, 'user can renew consent');
+  });
+  assert.equal(renewedConsent.status, 200, 'user can renew consent');
+  assert.equal(renewedConsent.body.consent_current, true, 'renewed consent is current');
+  assert.equal((await request('/api/telegram/account', { cookie: userSession.cookie })).body.consent_current, true,
+    'account response becomes current after renewed consent');
   const createdProfile = await request('/api/telegram/profile', {
     method: 'PUT', cookie: userSession.cookie, csrf: userSession.csrf, body: sampleProfile
   });
@@ -240,12 +253,13 @@ try {
   const exported = await request('/api/telegram/account?export=1', { cookie: userSession.cookie });
   assert.equal(exported.status, 200, 'consented user can export account data');
   assert.deepEqual(Object.keys(exported.body).sort(), [
-    'consent_at', 'consent_version', 'first_seen', 'last_seen', 'locale', 'profile', 'source_bot_id', 'telegram_id'
-  ].sort(), 'export contains exactly the persisted account fields');
+    'consent_at', 'consent_current', 'consent_version', 'first_seen', 'last_seen', 'locale', 'profile', 'source_bot_id', 'telegram_id'
+  ].sort(), 'export contains persisted account fields plus the server-derived consent state');
   assert.equal(exported.body.telegram_id, userId);
   assert.equal(exported.body.locale, 'en');
   assert.equal(exported.body.source_bot_id, 'bot-test');
-  assert.equal(exported.body.consent_version, consentVersion);
+  assert.equal(exported.body.consent_version, renewedConsentVersion);
+  assert.equal(exported.body.consent_current, true);
   assert.equal(exported.body.profile.birth_date, sampleProfile.birth_date, 'account export includes the profile');
   for (const field of ['first_seen', 'last_seen', 'consent_at']) {
     assert.ok(Number.isFinite(Date.parse(exported.body[field])), `${field} is an ISO timestamp`);
@@ -325,7 +339,7 @@ try {
   const statsDb = new DatabaseSync(dbPath);
   statsDb.prepare(`INSERT INTO users (telegram_id, locale, source_bot_id, first_seen, last_seen, consent_at, consent_version)
     VALUES (?, 'en', 'bot-test', ?, ?, ?, ?)`)
-    .run(statsUserId, utc1730, utc1730, utc1730, consentVersion);
+    .run(statsUserId, utc1730, utc1730, utc1730, renewedConsentVersion);
   statsDb.close();
   const timezoneStats = await request('/api/admin/overview', { cookie: adminCookie });
   assert.equal(timezoneStats.status, 200);
