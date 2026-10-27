@@ -8,7 +8,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const html = await readFile(join(ROOT, 'haku.html'), 'utf8');
 const server = await readFile(join(ROOT, 'server.mjs'), 'utf8');
 let source = html.slice(html.indexOf('const T ='), html.indexOf('const $='));
-source = source.replace('const T =', 'globalThis.T =').replace('const F=', 'globalThis.F=').replace('const A=', 'globalThis.A=');
+source = source.replace('const T =', 'globalThis.T =').replace('const F=', 'globalThis.F=').replace('const A=', 'globalThis.A=').replace('const ZIWEI_COPY=', 'globalThis.ZIWEI_COPY=');
 const copy = {};
 vm.runInNewContext(source, copy);
 
@@ -21,6 +21,7 @@ function compareShape(expected, actual, path) {
 
 for (const locale of ['vi', 'zh', 'km', 'th']) {
   for (const name of ['T', 'F', 'A']) compareShape(copy[name].en, copy[name][locale], `${name}.${locale}`);
+  compareShape(copy.ZIWEI_COPY.en, copy.ZIWEI_COPY[locale], `ZIWEI_COPY.${locale}`);
 }
 assert.match(html, /data-language="en">English<\/button><button[^>]+data-language="vi">Tiếng Việt<\/button><button[^>]+data-language="zh">简体中文<\/button><button[^>]+data-language="km">ខ្មែរ<\/button><button[^>]+data-language="th">ไทย<\/button>/, 'language menu order is en, vi, zh, km, th');
 assert.match(html, /tgLanguage\.startsWith\('vi'\)\?'vi'/, 'Telegram vi and vi-* languages default to Vietnamese');
@@ -32,13 +33,15 @@ assert.match(html, /id="consent" type="checkbox" checked/, 'Save account is sele
 for (const locale of ['en', 'vi', 'zh', 'km', 'th']) {
   assert.ok(copy.T[locale].startConsentText, `T.${locale}.startConsentText is present`);
   assert.ok(copy.T[locale].languageMenuLabel, `T.${locale}.languageMenuLabel is present`);
-  for (const key of ['datePlaceholder', 'dateDialogTitle', 'dateYear', 'dateMonth', 'dateDay', 'dateCancel', 'dateConfirm', 'timePlaceholder', 'timeDialogTitle', 'timeHour', 'timeMinute', 'savedAnswers', 'profileTitle', 'profileEmpty', 'saveProfile', 'deleteProfile', 'profileDeleteTitle', 'profileSaved', 'profileDeleted', 'profileTimeRequired', 'profileFormSaveError', 'profileHead', 'viewProfile']) {
+  for (const key of ['datePlaceholder', 'dateDialogTitle', 'dateYear', 'dateMonth', 'dateDay', 'dateCancel', 'dateConfirm', 'timePlaceholder', 'timeDialogTitle', 'timeHour', 'timeMinute', 'savedAnswers', 'profileTitle', 'profileEmpty', 'profileGender', 'saveProfile', 'deleteProfile', 'profileDeleteTitle', 'profileSaved', 'profileDeleted', 'profileTimeRequired', 'profileFormSaveError', 'profileHead', 'viewProfile', 'viewZiwei', 'myZiwei', 'ziweiTitle', 'ziweiUnavailable', 'ziweiNeedsTime', 'ziweiFootnote', 'ziweiLeapNote']) {
     assert.ok(copy.T[locale][key], `T.${locale}.${key} is present`);
   }
-  for (const key of ['userProfileTitle', 'profileBirthDate', 'profileBirthTime', 'profileUnknownTime', 'profileTermSide', 'profilePlace', 'profileRelationship', 'profileConcern', 'profileDuration', 'profileUpdatedAt']) {
+  for (const key of ['userProfileTitle', 'profileBirthDate', 'profileBirthTime', 'profileUnknownTime', 'profileTermSide', 'profilePlace', 'profileGender', 'profileRelationship', 'profileConcern', 'profileDuration', 'profileUpdatedAt']) {
     assert.ok(copy.A[locale][key], `A.${locale}.${key} is present`);
   }
 }
+assert.ok(Object.keys(copy.ZIWEI_COPY.en.themes).length === 14, 'all 14 major stars have reflective themes');
+for (const locale of ['en', 'vi', 'zh', 'km', 'th']) assert.equal(copy.F[locale].steps.length, 6, `${locale} has six questionnaire steps`);
 assert.match(html, /id="start-reading"[\s\S]+id="consent-panel"[\s\S]+class="moon-art"/, 'home orders start action, optional consent, then illustration');
 assert.doesNotMatch(html, /id="continue"/, 'standalone Continue with Telegram action is removed');
 assert.match(html, /function beginReading\(\)[\s\S]+saveOwnAccount\(button,'startReading'\)[\s\S]+startReading\(\)/, 'start action attempts consent before reading without blocking the reading call');
@@ -63,7 +66,9 @@ assert.match(html, /void saveReadingProfile\(\)/, 'completing the questionnaire 
 assert.match(html, /id="reading-profile"[\s\S]+id="profile-form"/, 'My account includes the reading-profile editor');
 assert.match(html, /data-profile-user/, 'admin users expose owner-only profile actions');
 assert.match(html, /F\[lang\]\.birthPlaces\[profile\.place\]/, 'admin profile renders the localized place label');
-assert.match(html, /F\[lang\]\.steps\[2\]\.options\[profile\.relationship\]/, 'admin profile renders localized questionnaire choices');
+assert.match(html, /F\[lang\]\.steps\[3\]\.options\[profile\.relationship\]/, 'admin profile renders localized questionnaire choices');
+assert.match(html, /script\.src='\/assets\/vendor\/iztro-2\.6\.3\.min\.js'/, 'iztro is loaded dynamically from the pinned local asset');
+assert.doesNotMatch(html, /<script[^>]+src="\/assets\/vendor\/iztro-2\.6\.3\.min\.js"/, 'iztro is not loaded by the home document');
 assert.doesNotMatch(html, /Object\.entries\(profile\)/, 'admin profile does not expose raw keys and values');
 const clientPlaces = html.match(/const PLACE_TZ=\{([^}]+)\}/)[1].match(/\b[a-z]{2}(?=:)/g).sort();
 const serverPlaces = server.match(/const profilePlaces = Object\.freeze\(\[([^\]]+)\]\)/)[1].match(/[a-z]{2}/g).sort();

@@ -7,8 +7,8 @@ The browser client and Node API are served together by default. A separate API b
 1. On open, the client reads the displayed user ID from Telegram WebApp data. Treat `initDataUnsafe` as display-only and untrusted.
 2. When `HAKU_API_BASE` is configured, the client sends the raw `Telegram.WebApp.initData` to `POST /api/telegram/auth` automatically. The server validates Telegram's signature using the expected Bot secret, checks `auth_date` freshness, and checks the validated user ID against the client-displayed ID.
 3. Successful verification creates a short-lived server session using a `Secure`, `HttpOnly`, `SameSite` cookie. Return the verified user and a CSRF token; do not return Bot secrets.
-4. The account and reading-profile checkbox is selected by default for a verified user without current v4 consent, but page load and successful authentication never save. Activating Begin the story while selected calls `POST /api/telegram/consent` exactly once with `{ "accepted": true, "locale": "en|vi|zh|km|th" }` and the CSRF token. Clearing it starts without saving; errors do not block reading. My account (`#/me`) provides the same explicit renewal action.
-5. Store account identity fields in `users` and the approved questionnaire fields in the separate STRICT `reading_profiles` table. Only consent version `2026-10-28-v4-reading-profile` may write a profile. Account deletion and retention cleanup explicitly delete the profile before the user row.
+4. The account and reading-profile checkbox is selected by default for a verified user without current v5 consent, but page load and successful authentication never save. Activating Begin the story while selected calls `POST /api/telegram/consent` exactly once with `{ "accepted": true, "locale": "en|vi|zh|km|th" }` and the CSRF token. Clearing it starts without saving; errors do not block reading. My account (`#/me`) provides the same explicit renewal action.
+5. Store account identity fields in `users` and the approved questionnaire fields in the separate STRICT `reading_profiles` table. The profile includes nullable `gender` (`male|female|undisclosed`) for Zi Wei decade-cycle direction. Only consent version `2026-10-28-v5-ziwei-gender` may write a profile. Account deletion and retention cleanup explicitly delete the profile before the user row. Zi Wei charts are computed in the browser and are never sent to or stored by the API.
 
 The Mini App launch URL or server-side route configuration identifies which approved Bot configuration is expected for that entry point. Telegram `initData` proves the user context when its signature validates; it is not a universal Bot identifier. Never infer trust from a query parameter supplied by the client.
 
@@ -24,7 +24,7 @@ All methods require the verified Telegram session; `PUT` and `DELETE` also requi
 
 Requires the verified Telegram user session and `X-CSRF-Token`. Deletes the record matching that session's Telegram ID and returns `{ "deleted": true }`. Missing sessions receive `401`; a missing or invalid CSRF token receives `403`. The endpoint does not accept a target ID from the request body.
 
-The production consent version is `2026-10-28-v4-reading-profile`, reflecting that consent now includes the listed reading answers. Existing rows retain their version and must renew before a profile can be written.
+The production consent version is `2026-10-28-v5-ziwei-gender`, reflecting that consent includes optional gender for Zi Wei decade-cycle direction. Existing rows retain their version and must renew before a profile can be written.
 
 Saved accounts and their reading profiles are automatically deleted when `last_seen` is older than `HAKU_RETENTION_DAYS` (default `365`). Cleanup runs at startup and every 24 hours. Successful Telegram authentication refreshes `last_seen`. Manga feedback remains session-only.
 
@@ -91,7 +91,7 @@ Register active Bots after each deployment or when adding a Bot with `node scrip
 
 ## Current storage and limits
 
-- SQLite stores consented accounts and, only under current v4 consent, the separate reading profile used for prefill and story generation. Manga feedback remains in page memory.
+- SQLite stores consented accounts and, only under current v5 consent, the separate reading profile used for prefill and browser-side story generation. Zi Wei charts and manga feedback remain in page memory.
 - Sessions are held in process memory. A server restart expires all user and admin sessions.
 - The current server targets one Node process and one persistent SQLite file. Multi-instance operation needs a shared data and session store.
 - Users can export or delete their account through the Telegram account endpoints. The retention period is configured with `HAKU_RETENTION_DAYS` and defaults to 365 days since last activity.

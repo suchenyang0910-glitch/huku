@@ -10,16 +10,17 @@ Haku is a Telegram Mini App for a quiet, illustrated self-reflection reading. Th
 | --- | --- | --- | --- |
 | Home and reading | `/` | Mini App launch | Telegram/browser navigation |
 | My account | `/#/me` | Verified Telegram user's header entry or direct URL | In-page Back, browser Back, Telegram BackButton |
+| Zi Wei chart | `/#/ziwei` | Final story panel or My account when a birth time exists | Returns to the story or My account; direct URL returns home |
 | Admin | Admin host | Direct URL | Admin logout |
 
-My account owns identity display, verification/saved status, Telegram ID copy, privacy details, account export/delete, and reading-profile edit/delete. Home owns Begin the story. A verified user without current v4 consent sees the default-selected account and reading-profile consent control; users with current consent, unverified users, and non-Telegram users do not.
+My account owns identity display, verification/saved status, Telegram ID copy, privacy details, account export/delete, and reading-profile edit/delete. Home owns Begin the story. A verified user without current v5 consent sees the default-selected account and reading-profile consent control; users with current consent, unverified users, and non-Telegram users do not.
 
 ## Consent and mutation states
 
 - Loading or verifying a Telegram session never creates an account record.
-- Begin the story calls the consent endpoint exactly once only for a verified user without current v4 consent while Save remains selected. Clearing it results in no account/profile write. A failed save shows an error and still opens the questionnaire.
-- Save or renew consent is available to verified users without current v4 consent in My account.
-- Completing the final question saves one complete reading profile only with current v4 consent. Failure is non-blocking. A saved profile prefills the questionnaire and can be edited or deleted from My account.
+- Begin the story calls the consent endpoint exactly once only for a verified user without current v5 consent while Save remains selected. Clearing it results in no account/profile write. A failed save shows an error and still opens the questionnaire.
+- Save or renew consent is available to verified users without current v5 consent in My account.
+- Completing the final question saves one complete reading profile only with current v5 consent. Failure is non-blocking. A saved profile prefills the questionnaire and can be edited or deleted from My account. Optional gender affects only Zi Wei decade-cycle direction; chart calculation stays in the browser.
 - Account deletion uses the localized app dialog, traps focus, disables the destructive action while pending, keeps failures in context, and restores focus on close.
 - Export and delete are available only for a verified, saved account.
 

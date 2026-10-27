@@ -22,6 +22,7 @@ function ensureUsersSchema(database) {
   `;
   if (!existing) database.exec(`CREATE TABLE users (${columns}) STRICT;`);
   else if (!/locale\s+IN\s*\([^)]*['"]vi['"]/i.test(existing.sql || '')) {
+    database.exec('PRAGMA foreign_keys=OFF;');
     try {
       database.exec(`
         BEGIN IMMEDIATE;
@@ -37,6 +38,8 @@ function ensureUsersSchema(database) {
     } catch (error) {
       try { database.exec('ROLLBACK;'); } catch {}
       throw error;
+    } finally {
+      database.exec('PRAGMA foreign_keys=ON;');
     }
   }
   database.exec(`
@@ -68,24 +71,35 @@ function ensureAdminSchema(database) {
 }
 
 function ensureReadingProfilesSchema(database) {
+  const existing = database.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'reading_profiles'").get();
+  const columns = `
+    telegram_id TEXT PRIMARY KEY REFERENCES users(telegram_id),
+    birth_date TEXT NOT NULL CHECK (birth_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+    birth_time TEXT CHECK (birth_time IS NULL OR birth_time GLOB '[0-2][0-9]:[0-5][0-9]'),
+    unknown_time INTEGER NOT NULL CHECK (unknown_time IN (0, 1)),
+    term_side TEXT NOT NULL CHECK (term_side IN ('', 'before', 'after', 'unknown')),
+    place TEXT NOT NULL CHECK (place IN ('kh', 'th', 'vn', 'cn', 'sg', 'my')),
+    gender TEXT CHECK (gender IS NULL OR gender IN ('male', 'female', 'undisclosed')),
+    relationship INTEGER NOT NULL CHECK (relationship BETWEEN 0 AND 3),
+    concern INTEGER NOT NULL CHECK (concern BETWEEN 0 AND 3),
+    duration INTEGER NOT NULL CHECK (duration BETWEEN 0 AND 3),
+    updated_at TEXT NOT NULL,
+    CHECK ((unknown_time = 1 AND birth_time IS NULL) OR (unknown_time = 0 AND birth_time IS NOT NULL))
+  `;
   try {
-    database.exec(`
-      BEGIN IMMEDIATE;
-      CREATE TABLE IF NOT EXISTS reading_profiles (
-        telegram_id TEXT PRIMARY KEY REFERENCES users(telegram_id),
-        birth_date TEXT NOT NULL CHECK (birth_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
-        birth_time TEXT CHECK (birth_time IS NULL OR birth_time GLOB '[0-2][0-9]:[0-5][0-9]'),
-        unknown_time INTEGER NOT NULL CHECK (unknown_time IN (0, 1)),
-        term_side TEXT NOT NULL CHECK (term_side IN ('', 'before', 'after', 'unknown')),
-        place TEXT NOT NULL CHECK (place IN ('kh', 'th', 'vn', 'cn', 'sg', 'my')),
-        relationship INTEGER NOT NULL CHECK (relationship BETWEEN 0 AND 3),
-        concern INTEGER NOT NULL CHECK (concern BETWEEN 0 AND 3),
-        duration INTEGER NOT NULL CHECK (duration BETWEEN 0 AND 3),
-        updated_at TEXT NOT NULL,
-        CHECK ((unknown_time = 1 AND birth_time IS NULL) OR (unknown_time = 0 AND birth_time IS NOT NULL))
-      ) STRICT;
-      COMMIT;
-    `);
+    if (!existing) database.exec(`BEGIN IMMEDIATE; CREATE TABLE reading_profiles (${columns}) STRICT; COMMIT;`);
+    else if (!/\bgender\b/i.test(existing.sql || '')) database.exec(`
+        BEGIN IMMEDIATE;
+        DROP TABLE IF EXISTS reading_profiles_gender_migration;
+        CREATE TABLE reading_profiles_gender_migration (${columns}) STRICT;
+        INSERT INTO reading_profiles_gender_migration
+          (telegram_id, birth_date, birth_time, unknown_time, term_side, place, gender, relationship, concern, duration, updated_at)
+          SELECT telegram_id, birth_date, birth_time, unknown_time, term_side, place, NULL, relationship, concern, duration, updated_at
+          FROM reading_profiles;
+        DROP TABLE reading_profiles;
+        ALTER TABLE reading_profiles_gender_migration RENAME TO reading_profiles;
+        COMMIT;
+      `);
   } catch (error) {
     try { database.exec('ROLLBACK;'); } catch {}
     throw error;
@@ -426,7 +440,7 @@ function profilePayload(row) {
 }
 
 function validateReadingProfile(body) {
-  const fields = ['birth_date', 'birth_time', 'unknown_time', 'term_side', 'place', 'relationship', 'concern', 'duration'];
+  const fields = ['birth_date', 'birth_time', 'unknown_time', 'term_side', 'place', 'gender', 'relationship', 'concern', 'duration'];
   if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some((key) => !fields.includes(key)) || fields.some((key) => !Object.hasOwn(body, key))) {
     throw Object.assign(new Error('profile_invalid'), { status: 400 });
   }
@@ -445,6 +459,7 @@ function validateReadingProfile(body) {
     throw Object.assign(new Error('birth_time_invalid'), { status: 400 });
   }
   if (!['', 'before', 'after', 'unknown'].includes(body.term_side)) throw Object.assign(new Error('term_side_invalid'), { status: 400 });
+  if (body.gender !== null && !['male', 'female', 'undisclosed'].includes(body.gender)) throw Object.assign(new Error('gender_invalid'), { status: 400 });
   for (const field of ['relationship', 'concern', 'duration']) {
     if (!Number.isInteger(body[field]) || body[field] < 0 || body[field] > 3) throw Object.assign(new Error(`${field}_invalid`), { status: 400 });
   }
@@ -650,6 +665,14 @@ const server = createServer(async (req, res) => {
   try {
     if (path === '/api/health' && ['GET', 'HEAD'].includes(req.method)) return json(res, 200, { ok: true });
 
+    if (path === '/assets/vendor/iztro-2.6.3.min.js' && ['GET', 'HEAD'].includes(req.method)) {
+      let asset;
+      try { asset = readFileSync(resolve(ROOT, 'public', 'assets', 'vendor', 'iztro-2.6.3.min.js')); }
+      catch { return json(res, 404, { error: 'not_found' }); }
+      res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=31536000, immutable' });
+      return res.end(req.method === 'HEAD' ? undefined : asset);
+    }
+
     const assetRoute = path.match(/^\/assets\/([a-z0-9-]+\.(?:webp|png))$/);
     if (assetRoute && ['GET', 'HEAD'].includes(req.method)) {
       let asset;
@@ -742,13 +765,14 @@ const server = createServer(async (req, res) => {
       const profile = validateReadingProfile(await readJson(req, 4096));
       const updatedAt = new Date().toISOString();
       db.prepare(`INSERT INTO reading_profiles
-        (telegram_id, birth_date, birth_time, unknown_time, term_side, place, relationship, concern, duration, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (telegram_id, birth_date, birth_time, unknown_time, term_side, place, gender, relationship, concern, duration, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(telegram_id) DO UPDATE SET birth_date=excluded.birth_date, birth_time=excluded.birth_time,
           unknown_time=excluded.unknown_time, term_side=excluded.term_side, place=excluded.place,
-          relationship=excluded.relationship, concern=excluded.concern, duration=excluded.duration, updated_at=excluded.updated_at`)
+          gender=excluded.gender, relationship=excluded.relationship, concern=excluded.concern,
+          duration=excluded.duration, updated_at=excluded.updated_at`)
         .run(session.telegramId, profile.birth_date, profile.birth_time, Number(profile.unknown_time), profile.term_side,
-          profile.place, profile.relationship, profile.concern, profile.duration, updatedAt);
+          profile.place, profile.gender, profile.relationship, profile.concern, profile.duration, updatedAt);
       return json(res, 200, profilePayload(db.prepare('SELECT * FROM reading_profiles WHERE telegram_id = ?').get(session.telegramId)));
     }
 

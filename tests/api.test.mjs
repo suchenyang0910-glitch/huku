@@ -16,7 +16,7 @@ const legacyPassword = 'legacy-' + randomBytes(24).toString('base64url');
 const botToken = '123456:' + randomBytes(24).toString('base64url');
 const userId = String(700000000 + randomBytes(4).readUInt32BE(0));
 const staleUserId = String(800000000 + randomBytes(4).readUInt32BE(0));
-const consentVersion = 'api-test-v1';
+const consentVersion = '2026-10-28-v4-reading-profile';
 const bots = [{ id: 'bot-test', name: 'Haku Test', token: botToken, active: true }];
 const sleep = (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
 
@@ -194,7 +194,7 @@ try {
 
   const sampleProfile = {
     birth_date: '1990-05-15', birth_time: '23:30', unknown_time: false, term_side: '', place: 'cn',
-    relationship: 1, concern: 2, duration: 3
+    gender: 'female', relationship: 1, concern: 2, duration: 3
   };
   assert.equal((await request('/api/telegram/profile', {
     method: 'PUT', cookie: userSession.cookie, body: sampleProfile
@@ -204,6 +204,7 @@ try {
     ['future date', { birth_date: '2999-01-01' }],
     ['time with unknown flag', { unknown_time: true }],
     ['unknown place', { place: 'xx' }],
+    ['unknown gender', { gender: 'other' }],
     ['option outside range', { concern: 4 }]
   ]) {
     const invalid = await request('/api/telegram/profile', {
@@ -216,7 +217,7 @@ try {
     rawBody: JSON.stringify({ ...sampleProfile, padding: 'x'.repeat(5000) })
   })).status, 413, 'profile request body is limited to 4KB');
 
-  const renewedConsentVersion = 'api-test-v2';
+  const renewedConsentVersion = '2026-10-28-v5-ziwei-gender';
   await stopServer();
   childEnv = { ...childEnv, HAKU_CONSENT_VERSION: renewedConsentVersion };
   await startServer();
@@ -241,6 +242,7 @@ try {
   });
   assert.equal(createdProfile.status, 200, 'profile can be created');
   assert.equal(createdProfile.body.birth_time, '23:30');
+  assert.equal(createdProfile.body.gender, 'female');
   assert.equal(createdProfile.body.unknown_time, false);
   assert.ok(Number.isFinite(Date.parse(createdProfile.body.updated_at)));
   assert.deepEqual((await request('/api/telegram/profile', { cookie: userSession.cookie })).body, createdProfile.body,
@@ -261,6 +263,7 @@ try {
   assert.equal(exported.body.consent_version, renewedConsentVersion);
   assert.equal(exported.body.consent_current, true);
   assert.equal(exported.body.profile.birth_date, sampleProfile.birth_date, 'account export includes the profile');
+  assert.equal(exported.body.profile.gender, 'female', 'account export includes gender');
   for (const field of ['first_seen', 'last_seen', 'consent_at']) {
     assert.ok(Number.isFinite(Date.parse(exported.body[field])), `${field} is an ISO timestamp`);
   }
@@ -309,6 +312,7 @@ try {
   const ownerProfile = await request(`/api/admin/users/${userId}/profile`, { cookie: adminCookie });
   assert.equal(ownerProfile.status, 200, 'owner can read a profile');
   assert.equal(ownerProfile.body.birth_date, sampleProfile.birth_date);
+  assert.equal(ownerProfile.body.gender, 'female', 'owner can see gender in the profile');
   assert.equal((await request(`/api/admin/users/${userId}/profile`, {
     cookie: adminCookie, headers: { Origin: 'https://mini.truesignal.cc' }
   })).status, 403, 'cross-origin admin profile access is rejected');
