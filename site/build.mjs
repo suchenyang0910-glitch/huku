@@ -74,7 +74,7 @@ function homeContent(copy, config, launch, locale) {
   const usernameText = username ? `@${escapeHtml(username.replace(/^@/, ''))}` : '<span class="placeholder">[@BOT_USERNAME]</span>';
   const email = String(config.contactEmail || '').trim();
   const contactText = email ? escapeHtml(email) : '<span class="placeholder">[CONTACT_EMAIL]</span>';
-  return `<div class="home-main"><section class="hero" aria-labelledby="hero-title"><div class="hero-copy"><p class="eyebrow">${escapeHtml(copy.eyebrow)}</p><h1 id="hero-title">${escapeHtml(copy.heroTitle)}</h1><p class="hero-description">${escapeHtml(copy.heroDescription)}</p><div class="hero-actions"><a class="button button-primary" data-open-haku href="${escapeHtml(launch)}">${escapeHtml(copy.open)}<svg class="button-arrow" viewBox="0 0 20 20" aria-hidden="true" focusable="false" width="19" height="19"><path d="M3 10h13m-5-5 5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></a><a class="bot-handle" href="https://t.me/${encodeURIComponent(username || '[BOT_USERNAME]')}">${escapeHtml(copy.continue)} ${usernameText}</a></div>${botanical}</div><div class="hero-art"><img class="hero-image" src="/assets/hero-900.webp" srcset="/assets/hero-900.webp 900w, /assets/hero-1800.webp 1800w" sizes="(max-width: 900px) 100vw, 61vw" width="900" height="506" alt="${escapeHtml(copy.heroAlt)}" fetchpriority="high"></div></section><section class="steps-section" id="how-it-works" aria-labelledby="steps-title"><h2 id="steps-title">${escapeHtml(copy.calmerTitle)}</h2><p class="section-lead">${escapeHtml(copy.calmerSubtitle)}</p><div class="steps"><article class="step"><span class="step-number" aria-hidden="true">1</span>${stepIcon('talk')}<div><h3>${escapeHtml(copy.stepOneTitle)}</h3><p>${escapeHtml(copy.stepOneText)}</p></div></article><article class="step"><span class="step-number" aria-hidden="true">2</span>${stepIcon('book')}<div><h3>${escapeHtml(copy.stepTwoTitle)}</h3><p>${escapeHtml(copy.stepTwoText)}</p></div></article><article class="step"><span class="step-number" aria-hidden="true">3</span>${stepIcon('leaf')}<div><h3>${escapeHtml(copy.stepThreeTitle)}</h3><p>${escapeHtml(copy.stepThreeText)}</p></div></article></div></section><section class="privacy-band" id="privacy" aria-labelledby="privacy-banner-title"><img class="privacy-logo" src="/assets/logo-96.webp" alt="" width="76" height="76" loading="lazy"><div class="privacy-copy"><h2 id="privacy-banner-title">${escapeHtml(copy.privacyBannerTitle)}</h2><p>${escapeHtml(copy.privacyBannerText)}</p></div><a class="privacy-link" href="${localPath(locale, 'privacy')}">${escapeHtml(copy.privacyLink)}</a>${bannerBotanical}</section><p class="visually-hidden">${escapeHtml(contactText)}</p></div>`;
+  return `<div class="home-main"><section class="hero" aria-labelledby="hero-title"><div class="hero-copy"><p class="eyebrow">${escapeHtml(copy.eyebrow)}</p><h1 id="hero-title">${escapeHtml(copy.heroTitle)}</h1><p class="hero-description">${escapeHtml(copy.heroDescription)}</p><div class="hero-actions"><a class="button button-primary" data-open-haku href="${escapeHtml(launch)}">${escapeHtml(copy.open)}<svg class="button-arrow" viewBox="0 0 20 20" aria-hidden="true" focusable="false" width="19" height="19"><path d="M3 10h13m-5-5 5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></a><a class="bot-handle" href="https://t.me/${encodeURIComponent(username || '[BOT_USERNAME]')}">${escapeHtml(copy.continue)} ${usernameText}</a></div>${botanical}</div><div class="hero-art"><img class="hero-image" src="/assets/hero-900.webp" srcset="/assets/hero-900.webp 900w, /assets/hero-1672.webp 1672w" sizes="(max-width: 900px) 100vw, 61vw" width="900" height="506" alt="${escapeHtml(copy.heroAlt)}" fetchpriority="high"></div></section><section class="steps-section" id="how-it-works" aria-labelledby="steps-title"><h2 id="steps-title">${escapeHtml(copy.calmerTitle)}</h2><p class="section-lead">${escapeHtml(copy.calmerSubtitle)}</p><div class="steps"><article class="step"><span class="step-number" aria-hidden="true">1</span>${stepIcon('talk')}<div><h3>${escapeHtml(copy.stepOneTitle)}</h3><p>${escapeHtml(copy.stepOneText)}</p></div></article><article class="step"><span class="step-number" aria-hidden="true">2</span>${stepIcon('book')}<div><h3>${escapeHtml(copy.stepTwoTitle)}</h3><p>${escapeHtml(copy.stepTwoText)}</p></div></article><article class="step"><span class="step-number" aria-hidden="true">3</span>${stepIcon('leaf')}<div><h3>${escapeHtml(copy.stepThreeTitle)}</h3><p>${escapeHtml(copy.stepThreeText)}</p></div></article></div></section><section class="privacy-band" id="privacy" aria-labelledby="privacy-banner-title"><img class="privacy-logo" src="/assets/logo-96.webp" alt="" width="76" height="76" loading="lazy"><div class="privacy-copy"><h2 id="privacy-banner-title">${escapeHtml(copy.privacyBannerTitle)}</h2><p>${escapeHtml(copy.privacyBannerText)}</p></div><a class="privacy-link" href="${localPath(locale, 'privacy')}">${escapeHtml(copy.privacyLink)}</a>${bannerBotanical}</section><p class="visually-hidden">${escapeHtml(contactText)}</p></div>`;
 }
 
 function contactMarkup(copy, config) {
@@ -92,6 +92,7 @@ function legalContent(copy, page, config) {
       `<section><h2>${escapeHtml(copy.retentionTitle)}</h2><p>${escapeHtml(copy.retentionText).replace('{retentionDays}', String(config.retentionDays))}</p></section>`,
       `<section><h2>${escapeHtml(copy.choicesTitle)}</h2><p>${escapeHtml(copy.choicesText)}</p></section>`,
       `<section><h2>${escapeHtml(copy.cookiesTitle)}</h2><p>${escapeHtml(copy.cookiesText)}</p></section>`,
+      `<section><h2>${escapeHtml(copy.logsTitle)}</h2><p>${escapeHtml(copy.logsText)}</p></section>`,
       `<section><h2>${escapeHtml(copy.adminTitle)}</h2><p>${escapeHtml(copy.adminText)}</p></section>`,
       `<section><h2>${escapeHtml(copy.contactTitle)}</h2><p>${contactMarkup(copy, config)}</p></section>`
     ];
@@ -134,12 +135,13 @@ if (!origin.startsWith('https://')) throw new Error('siteOrigin must use HTTPS')
 
 const template = await readFile(join(ROOT, 'template.html'), 'utf8');
 const style = await readFile(join(ROOT, 'styles.css'), 'utf8');
-const fontNames = ['fraunces', 'dm-sans', 'noto-sans-khmer', 'noto-sans-thai'];
-const assetNames = ['hero-900.webp', 'hero-1800.webp', 'og-image.jpg', 'logo-96.webp', 'favicon.png', 'apple-touch-icon.png'];
+const fontNames = ['fraunces', 'dm-sans', 'noto-sans-khmer', 'noto-sans-khmer-600', 'noto-sans-thai', 'noto-sans-thai-600'];
+const fontLicenses = ['fraunces', 'dm-sans', 'noto-sans-khmer', 'noto-sans-thai'];
+const assetNames = ['hero-900.webp', 'hero-1672.webp', 'og-image.jpg', 'logo-96.webp', 'favicon.png', 'apple-touch-icon.png'];
 for (const file of [...fontNames.map((name) => join(ROOT, 'assets-src', 'fonts', `${name}.woff2`)), ...assetNames.map((name) => join(GENERATED, name))]) {
   try { await stat(file); } catch { throw new Error(`Missing generated asset ${file}. See site/README.md for the asset conversion commands.`); }
 }
-for (const name of ['hero-900.webp', 'hero-1800.webp']) {
+for (const name of ['hero-900.webp', 'hero-1672.webp']) {
   const info = await stat(join(GENERATED, name));
   if (info.size > 300 * 1024) throw new Error(`${name} must be no larger than 300 KB (currently ${info.size} bytes)`);
 }
@@ -150,7 +152,7 @@ await mkdir(join(DIST, 'fonts', 'licenses'), { recursive: true });
 await writeFile(join(DIST, 'styles.css'), style, 'utf8');
 for (const name of assetNames) await cp(join(GENERATED, name), join(DIST, 'assets', name));
 for (const name of fontNames) await cp(join(ROOT, 'assets-src', 'fonts', `${name}.woff2`), join(DIST, 'fonts', `${name}.woff2`));
-for (const name of fontNames) await cp(join(ROOT, 'assets-src', 'fonts', 'licenses', `${name.replaceAll('-', '')}-OFL.txt`), join(DIST, 'fonts', 'licenses', `${name}-OFL.txt`));
+for (const name of fontLicenses) await cp(join(ROOT, 'assets-src', 'fonts', 'licenses', `${name.replaceAll('-', '')}-OFL.txt`), join(DIST, 'fonts', 'licenses', `${name}-OFL.txt`));
 
 const launch = openUrl(config);
 const localeCopies = Object.fromEntries(await Promise.all(LOCALES.map(async (locale) => [locale, await loadLocale(locale)])));
@@ -162,7 +164,7 @@ for (const locale of LOCALES) {
     const canonical = absoluteUrl(origin, route);
     const title = page === 'home' ? copy.titleHome : page === 'privacy' ? copy.titlePrivacy : copy.titleTerms;
     const description = page === 'home' ? copy.descriptionHome : page === 'privacy' ? copy.descriptionPrivacy : copy.descriptionTerms;
-    const preload = page === 'home' ? '  <link rel="preload" as="image" href="/assets/hero-900.webp" imagesrcset="/assets/hero-900.webp 900w, /assets/hero-1800.webp 1800w" imagesizes="(max-width: 900px) 100vw, 61vw">' : '';
+    const preload = page === 'home' ? '  <link rel="preload" as="image" href="/assets/hero-900.webp" imagesrcset="/assets/hero-900.webp 900w, /assets/hero-1672.webp 1672w" imagesizes="(max-width: 900px) 100vw, 61vw">' : '';
     const content = page === 'home' ? homeContent(copy, config, launch, locale) : legalContent(copy, page, config);
     const html = render(template, {
       lang: locale,

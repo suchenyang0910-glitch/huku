@@ -45,6 +45,8 @@
   "choicesText": "At any time, use “Download my data” in the Mini App to export your account record, or “Delete my account” to remove it.",
   "cookiesTitle": "Cookies and external resources",
   "cookiesText": "This website does not use cookies and does not load third-party resources. The Mini App uses one necessary login cookie to maintain your session.",
+  "logsTitle": "IP addresses and server logs",
+  "logsText": "This website and the Mini App are delivered through Cloudflare, and our web server keeps access logs. Both process your IP address to deliver pages and protect the service. The Mini App audit log also stores the IP address and time of administrator sign-ins, failed sign-in attempts, and account data exports. These records never contain your reading answers.",
   "adminTitle": "Administrator access and logs",
   "adminText": "The admin area is limited to named administrator accounts. The system records administrator sign-ins, failed sign-in attempts, sign-outs, and data exports in its audit log.",
   "contactTitle": "Contact",

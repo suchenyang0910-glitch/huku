@@ -28,7 +28,7 @@ The checked-in conversions were made with FFmpeg (`ffmpeg`, built with `libwebp`
 ```sh
 mkdir -p site/assets-src/generated
 ffmpeg -hide_banner -loglevel error -y -i site/assets-src/hero.png -vf "scale=900:-2:flags=lanczos" -frames:v 1 -c:v libwebp -quality 80 -compression_level 6 site/assets-src/generated/hero-900.webp
-ffmpeg -hide_banner -loglevel error -y -i site/assets-src/hero.png -vf "scale=1800:-2:flags=lanczos" -frames:v 1 -c:v libwebp -quality 78 -compression_level 6 site/assets-src/generated/hero-1800.webp
+ffmpeg -hide_banner -loglevel error -y -i site/assets-src/hero.png -frames:v 1 -c:v libwebp -quality 78 -compression_level 6 site/assets-src/generated/hero-1672.webp
 ffmpeg -hide_banner -loglevel error -y -i site/assets-src/hero.png -vf "scale=1200:675:flags=lanczos,crop=1200:630" -frames:v 1 -q:v 3 site/assets-src/generated/og-image.jpg
 ffmpeg -hide_banner -loglevel error -y -i bot-assets/haku-avatar-640.png -vf "scale=96:96:flags=lanczos" -frames:v 1 -c:v libwebp -quality 90 -compression_level 6 site/assets-src/generated/logo-96.webp
 ffmpeg -hide_banner -loglevel error -y -i bot-assets/haku-avatar-640.png -vf "scale=32:32:flags=lanczos" -frames:v 1 site/assets-src/generated/favicon.png
@@ -40,17 +40,17 @@ Current output sizes:
 | File | Size |
 |---|---:|
 | `hero-900.webp` | 61,056 bytes |
-| `hero-1800.webp` | 159,356 bytes |
+| `hero-1672.webp` | 142,858 bytes |
 | `og-image.jpg` | 192,250 bytes |
 | `logo-96.webp` | 1,488 bytes |
 | `favicon.png` | 1,946 bytes |
 | `apple-touch-icon.png` | 35,616 bytes |
 
-The 900 px and 1800 px hero images are both under 300 KB. `node site/build.mjs` enforces that limit.
+The 2x hero is encoded at the source's native 1672 px width; do not upscale it. If a wider source replaces `hero.png`, regenerate the 2x file at that width and update the `srcset` descriptor in `site/build.mjs`. The 900 px and 1672 px hero images are both under 300 KB. `node site/build.mjs` enforces that limit.
 
 ## Fonts and licenses
 
-The self-hosted WOFF2 files are subsets for the scripts used by the site: variable Latin Fraunces and DM Sans, and regular Noto Sans Khmer and Noto Sans Thai. They were obtained from `fontsource/font-files` at commit `2ffd3aa25908df6ed1c864de40ce53e2ae1076d1`. The matching SIL Open Font License 1.1 texts from `google/fonts` are included under `site/assets-src/fonts/licenses/` and copied into `site/dist/fonts/licenses/` with the font files. No font is requested from a third-party host at runtime.
+The self-hosted WOFF2 files are subsets for the scripts used by the site: variable Latin Fraunces and DM Sans, and Noto Sans Khmer and Noto Sans Thai in regular (400) and semibold (600) so headings never use synthesized bold. They were obtained from `fontsource/font-files` at commit `2ffd3aa25908df6ed1c864de40ce53e2ae1076d1`. The matching SIL Open Font License 1.1 texts from `google/fonts` are included under `site/assets-src/fonts/licenses/` and copied into `site/dist/fonts/licenses/` with the font files. No font is requested from a third-party host at runtime.
 
 ## Production deployment by operations
 
