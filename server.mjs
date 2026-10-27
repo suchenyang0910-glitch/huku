@@ -9,6 +9,42 @@ import { BOT_COPY } from './bot-copy.mjs';
 const ROOT = dirname(fileURLToPath(import.meta.url));
 loadEnv(resolve(ROOT, '.env'));
 
+function ensureUsersSchema(database) {
+  const existing = database.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'").get();
+  const columns = `
+    telegram_id TEXT PRIMARY KEY,
+    locale TEXT NOT NULL CHECK (locale IN ('en','vi','zh','km','th')),
+    source_bot_id TEXT NOT NULL,
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    consent_at TEXT NOT NULL,
+    consent_version TEXT NOT NULL
+  `;
+  if (!existing) database.exec(`CREATE TABLE users (${columns}) STRICT;`);
+  else if (!/locale\s+IN\s*\([^)]*['"]vi['"]/i.test(existing.sql || '')) {
+    try {
+      database.exec(`
+        BEGIN IMMEDIATE;
+        DROP TABLE IF EXISTS users_locale_migration;
+        CREATE TABLE users_locale_migration (${columns}) STRICT;
+        INSERT INTO users_locale_migration
+          (telegram_id, locale, source_bot_id, first_seen, last_seen, consent_at, consent_version)
+          SELECT telegram_id, locale, source_bot_id, first_seen, last_seen, consent_at, consent_version FROM users;
+        DROP TABLE users;
+        ALTER TABLE users_locale_migration RENAME TO users;
+        COMMIT;
+      `);
+    } catch (error) {
+      try { database.exec('ROLLBACK;'); } catch {}
+      throw error;
+    }
+  }
+  database.exec(`
+    CREATE INDEX IF NOT EXISTS users_first_seen_idx ON users(first_seen DESC);
+    CREATE INDEX IF NOT EXISTS users_last_seen_idx ON users(last_seen DESC);
+  `);
+}
+
 function ensureAdminSchema(database) {
   database.exec(`
     CREATE TABLE IF NOT EXISTS admins (
@@ -231,19 +267,9 @@ const db = new DatabaseSync(databasePath);
 db.exec(`
   PRAGMA journal_mode = WAL;
   PRAGMA foreign_keys = ON;
-  CREATE TABLE IF NOT EXISTS users (
-    telegram_id TEXT PRIMARY KEY,
-    locale TEXT NOT NULL CHECK (locale IN ('en','km','th','zh')),
-    source_bot_id TEXT NOT NULL,
-    first_seen TEXT NOT NULL,
-    last_seen TEXT NOT NULL,
-    consent_at TEXT NOT NULL,
-    consent_version TEXT NOT NULL
-  ) STRICT;
-  CREATE INDEX IF NOT EXISTS users_first_seen_idx ON users(first_seen DESC);
-  CREATE INDEX IF NOT EXISTS users_last_seen_idx ON users(last_seen DESC);
 `);
 
+ensureUsersSchema(db);
 ensureAdminSchema(db);
 
 const auditInsert = db.prepare('INSERT INTO audit_log (id, admin_id, action, target, at, ip) VALUES (?, ?, ?, ?, ?, ?)');
@@ -610,7 +636,7 @@ const server = createServer(async (req, res) => {
       if (!csrfValid(req, session)) return json(res, 403, { error: 'csrf_invalid' });
       const body = await readJson(req, 4096);
       if (body.accepted !== true) return json(res, 400, { error: 'consent_required' });
-      if (!['en', 'km', 'th', 'zh'].includes(body.locale)) return json(res, 400, { error: 'locale_invalid' });
+      if (!['en', 'vi', 'zh', 'km', 'th'].includes(body.locale)) return json(res, 400, { error: 'locale_invalid' });
       const timestamp = new Date().toISOString();
       userUpsert.run(session.telegramId, body.locale, session.botId, timestamp, timestamp, timestamp, consentVersion);
       return json(res, 200, { saved: true, botName: bots.find((bot) => bot.id === session.botId)?.name || session.botId });

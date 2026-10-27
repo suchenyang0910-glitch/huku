@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const DIST = join(ROOT, 'dist');
-const LOCALES = ['en', 'km', 'th', 'zh'];
+const LOCALES = ['en', 'vi', 'zh', 'km', 'th'];
 const PAGES = ['home', 'privacy', 'terms'];
 const CONFIG_PATH = join(ROOT, 'site.config.json');
 const GENERATED = join(ROOT, 'assets-src', 'generated');
@@ -38,7 +38,7 @@ function openUrl(config) {
 }
 
 function languageMenu(locale, page, copy) {
-  const labels = { en: 'EN', km: 'ខ្មែរ', th: 'ไทย', zh: '中文' };
+  const labels = { en: 'EN', vi: 'Tiếng Việt', zh: '中文', km: 'ខ្មែរ', th: 'ไทย' };
   return `<details class="language-menu"><summary aria-label="${escapeHtml(copy.languageMenu)}"><span>${labels[locale]}</span><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false"><path d="m3.5 6 4.5 4 4.5-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></summary><div class="language-options">${LOCALES.map((code) => `<a href="${localPath(code, page)}" lang="${code}"${code === locale ? ' aria-current="page"' : ''}>${labels[code]}</a>`).join('')}</div></details>`;
 }
 
@@ -142,7 +142,7 @@ if (!origin.startsWith('https://')) throw new Error('siteOrigin must use HTTPS')
 
 const template = await readFile(join(ROOT, 'template.html'), 'utf8');
 const style = await readFile(join(ROOT, 'styles.css'), 'utf8');
-const fontNames = ['fraunces', 'dm-sans', 'noto-sans-khmer', 'noto-sans-khmer-600', 'noto-sans-thai', 'noto-sans-thai-600'];
+const fontNames = ['fraunces', 'fraunces-vietnamese', 'dm-sans', 'dm-sans-vietnamese-400', 'dm-sans-vietnamese-600', 'dm-sans-vietnamese-700', 'noto-sans-khmer', 'noto-sans-khmer-600', 'noto-sans-thai', 'noto-sans-thai-600'];
 const fontLicenses = ['fraunces', 'dm-sans', 'noto-sans-khmer', 'noto-sans-thai'];
 const assetNames = ['hero-900.webp', 'hero-1672.webp', 'og-image.jpg', 'logo-96.webp', 'favicon.png', 'apple-touch-icon.png'];
 for (const file of [...fontNames.map((name) => join(ROOT, 'assets-src', 'fonts', `${name}.woff2`)), ...assetNames.map((name) => join(GENERATED, name))]) {
@@ -163,6 +163,13 @@ for (const name of fontLicenses) await cp(join(ROOT, 'assets-src', 'fonts', 'lic
 
 const launch = openUrl(config);
 const localeCopies = Object.fromEntries(await Promise.all(LOCALES.map(async (locale) => [locale, await loadLocale(locale)])));
+const englishKeys = Object.keys(localeCopies.en).sort();
+for (const locale of LOCALES) {
+  const keys = Object.keys(localeCopies[locale]).sort();
+  if (keys.length !== englishKeys.length || keys.some((key, index) => key !== englishKeys[index])) {
+    throw new Error(`Locale keys for ${locale} do not exactly match en`);
+  }
+}
 const sitemapUrls = [];
 for (const locale of LOCALES) {
   const copy = localeCopies[locale];

@@ -1,6 +1,6 @@
 # Haku Mini App
 
-The project now includes a small Node.js API server, SQLite account storage, Telegram Mini App authentication, and an authenticated admin dashboard.
+The project now includes a small Node.js API server, SQLite account storage, Telegram Mini App authentication, and an authenticated admin dashboard. The interface supports English (`en`), Vietnamese (`vi`), Simplified Chinese (`zh`), Khmer (`km`), and Thai (`th`), in that display order.
 
 ## Run locally
 
@@ -122,13 +122,15 @@ To restore, stop Haku, copy the chosen backup over /var/lib/haku/haku.sqlite, re
 
 ### Upgrade and rollback
 
-Back up SQLite before an upgrade. Check out or copy the intended release, rebuild and recreate only Haku with the same /var/lib/haku bind mount:
+Back up `/var/lib/haku/haku.sqlite` before an upgrade. This release expands the `users.locale` constraint at startup, so do not deploy it without that backup. Check out or copy the intended release, rebuild and recreate only Haku with the same /var/lib/haku bind mount:
 
 ~~~sh
 docker compose -f deploy/compose.yml build
 docker compose -f deploy/compose.yml up -d --force-recreate
 docker compose -f deploy/compose.yml ps
 ~~~
+
+After the upgraded service is healthy, run `node scripts/set-webhook.mjs` once in the Haku container to publish the Vietnamese Bot profile copy.
 
 After health and both domains are verified, retain the previous image or commit until the rollback window closes. To roll back, check out the previous known-good commit (placeholder: <PREVIOUS_COMMIT>), rebuild, recreate Haku with the same data directory, and verify health. Do not run two containers against the same SQLite file.
 

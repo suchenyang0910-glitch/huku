@@ -153,35 +153,41 @@ try {
   assert.equal(received[0].body.chat_id, 110);
   assert.equal(Object.hasOwn(received[0].body, 'parse_mode'), false);
 
-  await post('bot-main', update(11, 111, '/start', 'zh-hans'));
+  await post('bot-main', update(11, 111, '/start', 'vi'));
   await waitForRequestCount(2);
-  assert.equal(received[1].body.text, BOT_COPY.zh.welcome);
-  await post('bot-main', update(12, 112, '/start', 'fr'));
+  assert.equal(received[1].body.text, BOT_COPY.vi.welcome);
+  await post('bot-main', update(12, 112, '/start', 'vi-VN'));
   await waitForRequestCount(3);
-  assert.equal(received[2].body.text, BOT_COPY.en.welcome);
-  await post('bot-main', update(13, 113, '/start abc'));
+  assert.equal(received[2].body.text, BOT_COPY.vi.welcome);
+  await post('bot-main', update(13, 113, '/start', 'zh-hans'));
   await waitForRequestCount(4);
-  await post('bot-main', update(14, 114, '/start@HakuStoryBot'));
+  assert.equal(received[3].body.text, BOT_COPY.zh.welcome);
+  await post('bot-main', update(14, 114, '/start', 'fr'));
   await waitForRequestCount(5);
-
-  assert.equal((await post('bot-main', update(15, 115, '/start', 'en', 'group'))).status, 200);
-  assert.equal((await post('bot-main', update(16, 116, 'hello'))).status, 200);
-  assert.equal((await post('bot-main', { update_id: 17, edited_message: update(17, 117, '/start').message })).status, 200);
-  await sleep(80);
-  assert.equal(received.length, 5, 'group, ordinary text and non-message updates are ignored');
-
-  const duplicate = update(18, 118, '/start');
-  await post('bot-main', duplicate);
+  assert.equal(received[4].body.text, BOT_COPY.en.welcome);
+  await post('bot-main', update(15, 115, '/start abc'));
   await waitForRequestCount(6);
+  await post('bot-main', update(16, 116, '/start@HakuStoryBot'));
+  await waitForRequestCount(7);
+
+  assert.equal((await post('bot-main', update(17, 117, '/start', 'en', 'group'))).status, 200);
+  assert.equal((await post('bot-main', update(18, 118, 'hello'))).status, 200);
+  assert.equal((await post('bot-main', { update_id: 19, edited_message: update(19, 119, '/start').message })).status, 200);
+  await sleep(80);
+  assert.equal(received.length, 7, 'group, ordinary text and non-message updates are ignored');
+
+  const duplicate = update(20, 120, '/start');
+  await post('bot-main', duplicate);
+  await waitForRequestCount(8);
   await post('bot-main', duplicate);
   await sleep(80);
-  assert.equal(received.length, 6, 'the same update_id is replied to once');
+  assert.equal(received.length, 8, 'the same update_id is replied to once');
 
   for (let i = 0; i < 5; i++) await post('bot-main', update(30 + i, 777, '/start'));
-  await waitForRequestCount(11);
+  await waitForRequestCount(13);
   assert.equal((await post('bot-main', update(35, 777, '/start'))).status, 200);
   await sleep(100);
-  assert.equal(received.length, 11, 'a chat receives at most five replies per minute');
+  assert.equal(received.length, 13, 'a chat receives at most five replies per minute');
 
   failNext = true;
   await post('bot-main', update(40, 440, '/start'));
