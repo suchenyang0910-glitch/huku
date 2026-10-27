@@ -39,7 +39,7 @@ The admin route uses named `owner` and `viewer` accounts. Only owners can perfor
    ~~~dotenv
    NODE_ENV=production
    HOST=127.0.0.1
-   PORT=4173
+   PORT=4183
    HAKU_PUBLIC_ORIGIN=https://mini.truesignal.cc
    HAKU_ALLOWED_ORIGINS=https://mini.truesignal.cc
    HAKU_TRUSTED_PROXY=true
@@ -52,11 +52,19 @@ The admin route uses named `owner` and `viewer` accounts. Only owners can perfor
    HAKU_BOTS_JSON=[{"id":"<BOT_ID>","name":"<BOT_NAME>","token":"<BOT_TOKEN>","active":true}]
    ~~~
 
-   Create /var/lib/haku and give it to the image's node user (UID 1000), for example with install -d -m 0750 -o 1000 -g 1000 /var/lib/haku. The Compose file uses host networking so Node can bind only to 127.0.0.1:4173; it does not publish port 4173 to the network.
+   Create /var/lib/haku and give it to the image's node user (UID 1000), for example with install -d -m 0750 -o 1000 -g 1000 /var/lib/haku. The Compose file uses host networking so Node can bind only to 127.0.0.1:4183; it does not publish port 4183 to the network.
+
+   **Port choice.** On the production host, 127.0.0.1:4173 is already published by another container (`oa-system-employee_web-1`), so Haku uses 4183. Check that the port is free before the first start; the command should print only the header line:
+
+   ~~~sh
+   ss -ltn 'sport = :4183'
+   ~~~
+
+   To use a different port, change `PORT` in `deploy/compose.yml` (it overrides `.env`) and the reverse proxy target. The container health check reads `PORT`, so it follows automatically. Do not stop or reconfigure the service on 4173.
 
 4. Install the proxy files without replacing the main website configuration. Copy deploy/cloudflare-realip.conf to /etc/nginx/snippets/haku-cloudflare-realip.conf and deploy/nginx-haku.conf into the active Nginx include directory. The real-IP snippet contains the Cloudflare origin-facing ranges from the official list; refresh it before applying and whenever Cloudflare changes its ranges. It trusts CF-Connecting-IP only from those ranges. Nginx replaces X-Forwarded-For with the single resolved $remote_addr value.
 
-5. Before changing firewall rules, inspect the current rules and verify the required operator source for SSH. Allow SSH only from the approved operator CIDR, allow ports 80 and 443 only from the current Cloudflare IP ranges, and keep 4173 closed externally. Remove any broad existing 80/443 allow rule only after verifying the current website also uses Cloudflare and the replacement allow rules are active. Do not change firewall defaults or SSH rules without confirming the management path remains open.
+5. Before changing firewall rules, inspect the current rules and verify the required operator source for SSH. Allow SSH only from the approved operator CIDR, allow ports 80 and 443 only from the current Cloudflare IP ranges, and keep 4183 closed externally. Remove any broad existing 80/443 allow rule only after verifying the current website also uses Cloudflare and the replacement allow rules are active. Do not change firewall defaults or SSH rules without confirming the management path remains open.
 
 6. Validate the active Nginx configuration, then reload the existing service without stopping it:
 
@@ -89,9 +97,11 @@ To migrate an existing installation that used `HAKU_ADMIN_PASSWORD`, keep the ol
 After every deployment, and whenever you add an active Bot to `HAKU_BOTS_JSON`, run the registration script on the server:
 
 ```sh
-node scripts/set-webhook.mjs --dry-run
-node scripts/set-webhook.mjs
+docker compose -f deploy/compose.yml exec haku node scripts/set-webhook.mjs --dry-run
+docker compose -f deploy/compose.yml exec haku node scripts/set-webhook.mjs
 ```
+
+Running it inside the container uses the same `.env` and `HAKU_PUBLIC_ORIGIN` as the running server and does not require Node on the host.
 
 The script requires `HAKU_PUBLIC_ORIGIN` to use HTTPS. It registers the webhook, Mini App menu button, and localized Bot profile copy. Keep Bot tokens in the server's `.env` or secret store; the script does not print tokens or webhook secrets. The Nginx example forwards all paths to Node. If your reverse proxy has an allowlist, permit `/api/telegram/webhook/`.
 
@@ -101,7 +111,7 @@ HAKU_COOKIE_SAMESITE=lax is stricter but does not work in Telegram Web's embedde
 
 ### Health, 525, and origin checks
 
-From outside the server, verify that https://mini.truesignal.cc/api/health returns {"ok":true} and that https://truesignal.cc still serves the existing website. A successful HTTPS response without a Cloudflare 525 means the origin TLS handshake is working. Also verify that a direct external request to 159.223.92.104:4173 fails; on the server itself, curl http://127.0.0.1:4173/api/health should return {"ok":true}. If 525 remains, check that port 443 presents the installed Origin Certificate for the requested hostname and that the Cloudflare zone uses Full (strict).
+From outside the server, verify that https://mini.truesignal.cc/api/health returns {"ok":true} and that https://truesignal.cc still serves the existing website. A successful HTTPS response without a Cloudflare 525 means the origin TLS handshake is working. Also verify that a direct external request to 159.223.92.104:4183 fails; on the server itself, curl http://127.0.0.1:4183/api/health should return {"ok":true}. A different body, such as {"error":"UNAUTHENTICATED"}, means another service answered on that port and Haku is not the listener. `docker compose -f deploy/compose.yml ps` should show the container as healthy. If 525 remains, check that port 443 presents the installed Origin Certificate for the requested hostname and that the Cloudflare zone uses Full (strict).
 
 ### SQLite backup and restore
 
