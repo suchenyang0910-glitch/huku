@@ -537,7 +537,7 @@ const server = createServer(async (req, res) => {
   }
 
   try {
-    if (path === '/api/health' && req.method === 'GET') return json(res, 200, { ok: true });
+    if (path === '/api/health' && ['GET', 'HEAD'].includes(req.method)) return json(res, 200, { ok: true });
 
     const webhookRoute = path.match(/^\/api\/telegram\/webhook\/([a-zA-Z0-9_-]{2,64})$/);
     if (webhookRoute && req.method === 'POST') {
@@ -691,3 +691,4 @@ function close() {
 }
 process.on('SIGINT', close);
 process.on('SIGTERM', close);
+
