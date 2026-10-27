@@ -18,12 +18,20 @@ function compareShape(expected, actual, path) {
   for (const key of Object.keys(expected)) compareShape(expected[key], actual[key], `${path}.${key}`);
 }
 
-for (const name of ['T', 'F', 'A']) compareShape(copy[name].en, copy[name].vi, name);
+for (const locale of ['vi', 'zh', 'km', 'th']) {
+  for (const name of ['T', 'F', 'A']) compareShape(copy[name].en, copy[name][locale], `${name}.${locale}`);
+}
 assert.match(html, /<option value="en">[^<]+<\/option><option value="vi">Tiếng Việt<\/option><option value="zh">[^<]+<\/option><option value="km">[^<]+<\/option><option value="th">[^<]+<\/option>/, 'language menu order is en, vi, zh, km, th');
 assert.match(html, /tgLanguage\.startsWith\('vi'\)\?'vi'/, 'Telegram vi and vi-* languages default to Vietnamese');
 assert.match(html, /DEFAULT_PLACE=\{en:'kh',vi:'vn',zh:'cn',km:'kh',th:'th'\}/, 'Vietnam is the Vietnamese locale default birthplace');
 assert.match(html, /localeName=\{en:'English',vi:'Tiếng Việt',zh:'中文',km:'ខ្មែរ',th:'ไทย'\}/, 'admin labels Vietnamese accounts in the requested order');
 assert.match(html, /family=Be\+Vietnam\+Pro:wght@400;500;600;700/, 'Mini App requests the required Be Vietnam Pro weights');
 assert.match(html, /:lang\(vi\)\{--sans:"Be Vietnam Pro",/, 'Mini App Vietnamese body text prefers Be Vietnam Pro');
+assert.match(html, /id="consent" type="checkbox" checked/, 'Save account is selected by default');
+assert.match(html, /id="user-entry"[\s\S]+id="me-view"/, 'header account entry and My account view are present');
+assert.match(html, /location\.hash==='\#\/me'/, 'My account uses the #/me route');
+assert.equal((html.match(/\/api\/telegram\/consent/g) || []).length, 1,
+  'the explicit save action is the only client path to the consent endpoint');
+assert.doesNotMatch(html, /\bconfirm\s*\(/, 'account deletion uses the app dialog instead of native confirm');
 
-console.log('locales.test.mjs: Vietnamese and English key sets match recursively.');
+console.log('locales.test.mjs: all locale key sets and account UI invariants pass.');

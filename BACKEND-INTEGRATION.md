@@ -7,7 +7,7 @@ The browser client and Node API are served together by default. A separate API b
 1. On open, the client reads the displayed user ID from Telegram WebApp data. Treat `initDataUnsafe` as display-only and untrusted.
 2. When `HAKU_API_BASE` is configured, the client sends the raw `Telegram.WebApp.initData` to `POST /api/telegram/auth` automatically. The server validates Telegram's signature using the expected Bot secret, checks `auth_date` freshness, and checks the validated user ID against the client-displayed ID.
 3. Successful verification creates a short-lived server session using a `Secure`, `HttpOnly`, `SameSite` cookie. Return the verified user and a CSRF token; do not return Bot secrets.
-4. The user must opt in before a durable account record is created. The checked consent form calls `POST /api/telegram/consent` with `{ "accepted": true, "locale": "en|vi|zh|km|th" }` and the CSRF token. Record consent version and time. Reject calls without an authenticated session or explicit acceptance.
+4. The Save account checkbox is selected by default, but page load and successful authentication never save an account. Only a user click on Continue with Telegram while the checkbox remains selected calls `POST /api/telegram/consent` with `{ "accepted": true, "locale": "en|vi|zh|km|th" }` and the CSRF token. If the user clears the checkbox, continuing does not call the consent endpoint. Record consent version and time, and reject calls without an authenticated session or explicit acceptance. My account (`#/me`) provides the same explicit save action for a verified, unsaved user.
 5. Retain only Telegram ID, selected locale, first/last-seen timestamps, consent state/version, and the approved Bot source ID needed for service delivery. Do not retain private reading answers in the account table. Define a deletion and retention policy before launch.
 
 The Mini App launch URL or server-side route configuration identifies which approved Bot configuration is expected for that entry point. Telegram `initData` proves the user context when its signature validates; it is not a universal Bot identifier. Never infer trust from a query parameter supplied by the client.
@@ -19,6 +19,8 @@ Requires the current verified Telegram user session. Returns only that user's sa
 ### `POST /api/telegram/account/delete`
 
 Requires the verified Telegram user session and `X-CSRF-Token`. Deletes the record matching that session's Telegram ID and returns `{ "deleted": true }`. Missing sessions receive `401`; a missing or invalid CSRF token receives `403`. The endpoint does not accept a target ID from the request body.
+
+The production consent version is `2026-10-28-v2-default-checked`, reflecting the default-selected control and revised privacy explanation. Existing rows retain the version recorded when they were saved.
 
 Saved records are automatically deleted when `last_seen` is older than `HAKU_RETENTION_DAYS` (default `365`). Cleanup runs once at service startup and every 24 hours. Successful Telegram authentication refreshes `last_seen` for an existing record. This account record excludes birth details, relationship answers, and reading feedback.
 
