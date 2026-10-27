@@ -31,6 +31,9 @@ assert.match(html, /id="consent" type="checkbox" checked/, 'Save account is sele
 for (const locale of ['en', 'vi', 'zh', 'km', 'th']) {
   assert.ok(copy.T[locale].startConsentText, `T.${locale}.startConsentText is present`);
   assert.ok(copy.T[locale].languageMenuLabel, `T.${locale}.languageMenuLabel is present`);
+  for (const key of ['datePlaceholder', 'dateDialogTitle', 'dateYear', 'dateMonth', 'dateDay', 'dateCancel', 'dateConfirm']) {
+    assert.ok(copy.T[locale][key], `T.${locale}.${key} is present`);
+  }
 }
 assert.match(html, /id="start-reading"[\s\S]+id="consent-panel"[\s\S]+class="moon-art"/, 'home orders start action, optional consent, then illustration');
 assert.doesNotMatch(html, /id="continue"/, 'standalone Continue with Telegram action is removed');
@@ -41,5 +44,9 @@ assert.match(html, /location\.hash==='\#\/me'/, 'My account uses the #/me route'
 assert.equal((html.match(/\/api\/telegram\/consent/g) || []).length, 1,
   'the explicit save action is the only client path to the consent endpoint');
 assert.doesNotMatch(html, /\bconfirm\s*\(/, 'account deletion uses the app dialog instead of native confirm');
+assert.doesNotMatch(html, /id="answer-date"[^>]+type="date"/, 'birth date no longer uses the native date input');
+assert.match(html, /id="date-dialog"[\s\S]{0,100}role="dialog" aria-modal="true"/, 'birth-date picker is a modal dialog');
+assert.equal((html.match(/data-wheel="(?:year|month|day)" role="listbox"/g) || []).length, 3, 'birth-date picker has three listboxes');
+assert.match(html, /function telegramBack\(\)\{if\(!\$\('#date-dialog'\)\.hidden\)\{closeDateDialog\(\);return\}/, 'Telegram BackButton closes the birth-date picker first');
 
 console.log('locales.test.mjs: all locale key sets and account UI invariants pass.');

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
 
@@ -12,6 +12,7 @@ try {
 }
 
 const root = path.resolve(import.meta.dirname, '..');
+const screenshotDir = path.join(root, 'docs', 'screenshots');
 const contentTypes = { '.html': 'text/html; charset=utf-8', '.webp': 'image/webp', '.png': 'image/png', '.svg': 'image/svg+xml' };
 const server = createServer(async (request, response) => {
   try {
@@ -35,11 +36,11 @@ const locales = ['en', 'vi', 'zh', 'km', 'th'];
 const states = ['unverified', 'verified-unsaved', 'saved'];
 const viewports = [{ width: 390, height: 750 }, { width: 360, height: 640 }];
 
-async function openScenario({ locale = 'en', state = 'verified-unsaved', viewport = viewports[0], consentFails = false, telegram = true } = {}) {
+async function openScenario({ locale = 'en', state = 'verified-unsaved', viewport = viewports[0], consentFails = false, telegram = true, colorScheme = 'light' } = {}) {
   const context = await browser.newContext({ viewport });
   await context.route('https://telegram.org/**', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
   await context.route('https://fonts.googleapis.com/**', route => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
-  await context.addInitScript(({ locale, state, consentFails, telegram }) => {
+  await context.addInitScript(({ locale, state, consentFails, telegram, colorScheme }) => {
     localStorage.setItem('haku-locale', locale);
     const main = {
       visible: false, text: '', callback: null,
@@ -48,12 +49,20 @@ async function openScenario({ locale = 'en', state = 'verified-unsaved', viewpor
       offClick(callback) { if (this.callback === callback) this.callback = null; },
       click() { return this.callback?.(); }, disable() {}, enable() {}, showProgress() {}, hideProgress() {}
     };
-    const back = { show() {}, hide() {}, onClick() {}, offClick() {} };
-    window.__hakuTest = { authCalls: 0, consentCalls: 0, main };
+    const back = {
+      visible: false, callback: null,
+      show() { this.visible = true; }, hide() { this.visible = false; },
+      onClick(callback) { this.callback = callback; },
+      offClick(callback) { if (this.callback === callback) this.callback = null; },
+      click() { return this.callback?.(); }
+    };
+    window.__hakuTest = { authCalls: 0, consentCalls: 0, haptics: 0, main, back };
     if (telegram) window.Telegram = { WebApp: {
         initData: 'signed-test-data',
         initDataUnsafe: { user: { id: 42, first_name: 'Lan', username: 'lan', language_code: locale } },
-        MainButton: main, BackButton: back, themeParams: {}, colorScheme: 'light',
+        MainButton: main, BackButton: back,
+        HapticFeedback: { selectionChanged() { window.__hakuTest.haptics++; } },
+        themeParams: colorScheme === 'dark' ? { bg_color: '#16231f', section_bg_color: '#293a33', text_color: '#f1f3ed', hint_color: '#bdc9c1' } : {}, colorScheme,
         ready() {}, expand() {}, onEvent() {}, isVersionAtLeast() { return true; }
       } };
     window.HAKU_API_BASE = location.origin;
@@ -74,7 +83,7 @@ async function openScenario({ locale = 'en', state = 'verified-unsaved', viewpor
       }
       return originalFetch(input, options);
     };
-  }, { locale, state, consentFails, telegram });
+  }, { locale, state, consentFails, telegram, colorScheme });
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -150,7 +159,82 @@ try {
   assert.equal(await page.evaluate(() => window.__hakuTest.main.visible), false, 'MainButton is hidden in My account');
   assert.deepEqual(errors, []);
   await context.close();
-  console.log('check-first-screen.mjs: all layout and Telegram MainButton scenarios pass.');
+
+  await mkdir(screenshotDir, { recursive: true });
+  const dateScenario = await openScenario({ locale: 'zh', state: 'saved', viewport: { width: 390, height: 750 } });
+  await dateScenario.page.click('#start-reading');
+  await dateScenario.page.click('#answer-date');
+  await dateScenario.page.waitForFunction(() => !document.querySelector('#date-dialog').hidden);
+  const dialogBox = await dateScenario.page.locator('.date-picker-sheet').boundingBox();
+  assert.ok(dialogBox && dialogBox.y >= 0 && dialogBox.y + dialogBox.height <= 750, 'date wheel fits in 390x750');
+  assert.equal(await dateScenario.page.locator('[role="listbox"]').count(), 3, 'date wheel exposes three listboxes');
+  assert.equal(await dateScenario.page.locator('[role="option"][aria-selected="true"]').count(), 3, 'each listbox exposes its selected option');
+  await dateScenario.page.screenshot({ path: path.join(screenshotDir, 'task-15-date-wheel-open.png') });
+  await dateScenario.page.evaluate(() => window.__hakuTest.back.click());
+  assert.equal(await dateScenario.page.locator('#date-dialog').isHidden(), true, 'Telegram BackButton closes the date wheel');
+  assert.equal(await dateScenario.page.locator('#answer-date').evaluate(element => document.activeElement === element), true, 'closing restores focus to the date field');
+  assert.match(await dateScenario.page.locator('#answer-date').textContent(), /选择出生日期/, 'cancel does not commit the initial draft');
+  await dateScenario.page.click('#answer-date');
+  await dateScenario.page.locator('#date-year-wheel').press('ArrowDown');
+  assert.ok(await dateScenario.page.evaluate(() => window.__hakuTest.haptics) > 0, 'wheel selection triggers haptic feedback');
+  await dateScenario.page.keyboard.press('Escape');
+  assert.equal(await dateScenario.page.locator('#date-dialog').isHidden(), true, 'Escape closes the date wheel');
+  await dateScenario.page.click('#answer-date');
+  await dateScenario.page.locator('#date-month-5').click();
+  await dateScenario.page.locator('#date-day-15').click();
+  await dateScenario.page.click('#date-confirm');
+  assert.match(await dateScenario.page.locator('#answer-date').textContent(), /1990.*5.*15/, 'Confirm displays the localized 1990-05-15 date');
+  await dateScenario.page.screenshot({ path: path.join(screenshotDir, 'task-15-date-wheel-selected.png') });
+  assert.equal(await dateScenario.page.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0, 'date question does not scroll horizontally');
+
+  await dateScenario.page.click('#answer-date');
+  await dateScenario.page.evaluate(() => new Promise(resolve => {
+    const year = document.querySelector('#date-year-wheel');
+    const month = document.querySelector('#date-month-wheel');
+    window.__dateMonthFirstOption = month.firstElementChild;
+    year.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1 }));
+    year.scrollTop = (1991 - 1930) * 44;
+    setTimeout(() => {
+      month.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 2 }));
+      month.scrollTop = (8 - 1) * 44;
+    }, 50);
+    setTimeout(() => year.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 })), 100);
+    setTimeout(() => {
+      month.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 2 }));
+      resolve();
+    }, 150);
+  }));
+  await dateScenario.page.waitForTimeout(220);
+  const fastWheelResult = await dateScenario.page.evaluate(() => {
+    const month = document.querySelector('#date-month-wheel');
+    const centered = month.children[Math.round(month.scrollTop / 44)];
+    return {
+      month: Number(centered.dataset.value),
+      selected: document.querySelector('#date-month-8').getAttribute('aria-selected'),
+      sameNode: window.__dateMonthFirstOption === month.firstElementChild
+    };
+  });
+  assert.deepEqual(fastWheelResult, { month: 8, selected: 'true', sameNode: true }, 'settling the year does not redraw or reset an active month wheel');
+  await dateScenario.page.click('#date-confirm');
+  assert.match(await dateScenario.page.locator('#answer-date').textContent(), /1991.*8.*15/, 'fast cross-wheel scrolling confirms the visible August value');
+
+  await dateScenario.page.click('#answer-date');
+  await dateScenario.page.evaluate(() => {
+    document.querySelector('#date-month-wheel').scrollTop = (11 - 1) * 44;
+    document.querySelector('#date-confirm').click();
+  });
+  assert.match(await dateScenario.page.locator('#answer-date').textContent(), /1991.*11.*15/, 'immediate Confirm settles the visible wheel values before committing');
+  assert.deepEqual(dateScenario.errors, []);
+  await dateScenario.context.close();
+
+  const darkScenario = await openScenario({ locale: 'vi', state: 'saved', viewport: { width: 390, height: 750 }, colorScheme: 'dark' });
+  await darkScenario.page.click('#start-reading');
+  await darkScenario.page.click('#answer-date');
+  assert.equal(await darkScenario.page.evaluate(() => document.documentElement.classList.contains('telegram-dark')), true, 'date wheel follows Telegram dark mode');
+  assert.equal(await darkScenario.page.locator('.date-picker-sheet').evaluate(element => getComputedStyle(element).backgroundColor), 'rgb(41, 58, 51)', 'date wheel uses the raised dark surface');
+  assert.deepEqual(darkScenario.errors, []);
+  await darkScenario.context.close();
+  console.log('check-first-screen.mjs: layout, Telegram controls, date wheel, and screenshots pass.');
 } finally {
   await browser.close();
   await new Promise(resolve => server.close(resolve));
