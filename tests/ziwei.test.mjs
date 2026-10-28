@@ -30,19 +30,24 @@ const timeZoneParts = extractFunction('timeZoneParts', 'resolveLocalTime', { Int
 const resolveLocalTime = extractFunction('resolveLocalTime', 'fourPillars', { timeZoneParts, Intl, Date, RangeError });
 const fourPillars = extractFunction('fourPillars', 'localTermOnDate', { solarTermState, resolveLocalTime, SOLAR_TERM_BASE_YEAR, SOLAR_TERM_LAST_YEAR: Number(table[2]) });
 const PLACE_TZ = { kh: 'Asia/Phnom_Penh', th: 'Asia/Bangkok', vn: 'Asia/Ho_Chi_Minh', cn: 'Asia/Shanghai', sg: 'Asia/Singapore', my: 'Asia/Kuala_Lumpur' };
-const standardBirthTime = extractFunction('standardBirthTime', 'ziweiTimeIndex', { resolveLocalTime, PLACE_TZ, Date });
+const standardBirthTime = extractFunction('standardBirthTime', 'ziweiBirthInput', { resolveLocalTime, PLACE_TZ, Date });
 const ziweiTimeIndex = extractFunction('ziweiTimeIndex', 'loadIztro');
+const ziweiBirthInput = extractFunction('ziweiBirthInput', 'ziweiTimeIndex', { standardBirthTime, ziweiTimeIndex });
 
 const chinaDst = standardBirthTime({ date: '1990-05-15', time: '13:30', place: 'cn' });
 assert.deepEqual({ year: chinaDst.year, month: chinaDst.month, day: chinaDst.day, hour: chinaDst.hour, minute: chinaDst.minute }, { year: 1990, month: 5, day: 15, hour: 12, minute: 30 });
 assert.equal(ziweiTimeIndex(chinaDst.hour), 6, '13:30 China DST uses 12:30 standard time and the 午 index');
 const chinaMidnight = standardBirthTime({ date: '1990-05-15', time: '00:30', place: 'cn' });
 assert.deepEqual({ year: chinaMidnight.year, month: chinaMidnight.month, day: chinaMidnight.day, hour: chinaMidnight.hour, minute: chinaMidnight.minute }, { year: 1990, month: 5, day: 14, hour: 23, minute: 30 }, 'DST conversion can cross into the previous standard-time date');
-const chinaMidnightChart = astro.bySolar(`${chinaMidnight.year}-${chinaMidnight.month}-${chinaMidnight.day}`, ziweiTimeIndex(chinaMidnight.hour), '男');
+const chinaMidnightInput = ziweiBirthInput({ date: '1990-05-15', time: '00:30', place: 'cn' });
+assert.deepEqual({ date: chinaMidnightInput.date, timeIndex: chinaMidnightInput.timeIndex }, { date: '1990-5-14', timeIndex: 12 }, 'China 00:30 calls bySolar with the previous standard-time date and late-Zi index');
+const chinaMidnightChart = astro.bySolar(chinaMidnightInput.date, chinaMidnightInput.timeIndex, '男');
 assert.deepEqual(Array.from(chinaMidnightChart.palaces.find((palace) => palace.name === '命宫').majorStars, (star) => star.name), ['天梁'], 'the cross-midnight chart uses 1990-5-14 rather than the civil date');
-assert.match(html, /date=\[standard\.year,standard\.month,standard\.day\]\.join\('-'\)/, 'createZiweiChart passes the standard-time date to bySolar');
 const cambodiaLate = standardBirthTime({ date: '1990-05-15', time: '23:30', place: 'kh' });
 assert.deepEqual({ year: cambodiaLate.year, month: cambodiaLate.month, day: cambodiaLate.day, hour: cambodiaLate.hour, minute: cambodiaLate.minute }, { year: 1990, month: 5, day: 15, hour: 23, minute: 30 }, 'a place without DST keeps its civil date and time');
+const cambodiaLateInput = ziweiBirthInput({ date: '1990-05-15', time: '23:30', place: 'kh' });
+assert.deepEqual({ date: cambodiaLateInput.date, timeIndex: cambodiaLateInput.timeIndex }, { date: '1990-5-15', timeIndex: 12 }, 'Cambodia 23:30 calls bySolar with the unchanged civil date and late-Zi index');
+assert.equal(astro.bySolar(cambodiaLateInput.date, cambodiaLateInput.timeIndex, '男').solarDate, '1990-5-15');
 const chinaDayChart = astro.bySolar(`${chinaDst.year}-${chinaDst.month}-${chinaDst.day}`, ziweiTimeIndex(chinaDst.hour), '男');
 const chinaSoul = chinaDayChart.palaces.find((palace) => palace.name === '命宫');
 assert.deepEqual([chinaSoul.heavenlyStem + chinaSoul.earthlyBranch, Array.from(chinaSoul.majorStars, (star) => star.name), chinaDayChart.fiveElementsClass], ['丁亥', ['天梁'], '土五局'], 'the daytime DST fixture keeps the expected Life Palace');

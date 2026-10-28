@@ -411,8 +411,12 @@ try {
     return node.textContent.trim() && style.display !== 'none' && style.visibility !== 'hidden' && node.getClientRects().length;
   }).map((node) => parseFloat(getComputedStyle(node).fontSize))));
   assert.ok(minimumZiweiFont >= 11, `all visible Zi Wei text at 390px is at least 11px (found ${minimumZiweiFont}px)`);
-  assert.equal(await ziweiScenario.page.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0, 'Zi Wei chart has no horizontal overflow at 390px');
+  assert.ok(await ziweiScenario.page.evaluate(() => document.documentElement.scrollWidth <= 390), 'Zi Wei chart has no page-level horizontal overflow at 390px');
   await ziweiScenario.page.screenshot({ path: path.join(screenshotDir, 'task-18-ziwei-chart-390.png'), fullPage: true });
+  await ziweiScenario.page.locator('#ziwei-list [data-ziwei-palace]').first().click();
+  assert.equal(await ziweiScenario.page.locator('#ziwei-detail').isVisible(), true, 'a list palace opens its complete details');
+  assert.match(await ziweiScenario.page.locator('#ziwei-detail').textContent(), /大限/, 'palace details include the decade range');
+  assert.ok(await ziweiScenario.page.locator('#ziwei-detail *').evaluateAll((nodes) => Math.min(...nodes.filter((node) => node.textContent.trim() && node.getClientRects().length).map((node) => parseFloat(getComputedStyle(node).fontSize)))) >= 11, 'expanded palace details keep every visible label at least 11px');
   await ziweiScenario.page.click('[data-ziwei-mode="grid"]');
   assert.equal(await ziweiScenario.page.locator('#ziwei-board-scroll').isVisible(), true, 'grid remains available on narrow screens');
   assert.equal(await ziweiScenario.page.evaluate(() => document.querySelector('#ziwei-board-scroll').scrollWidth > document.querySelector('#ziwei-board-scroll').clientWidth), true, 'the narrow grid scrolls inside its chart container');
@@ -422,7 +426,7 @@ try {
   }).map((node) => parseFloat(getComputedStyle(node).fontSize))));
   assert.ok(minimumGridFont >= 11, `all visible grid text at 390px is at least 11px (found ${minimumGridFont}px)`);
   assert.ok(await ziweiScenario.page.locator('#ziwei-board .ziwei-palace strong').first().evaluate((node) => parseFloat(getComputedStyle(node).fontSize)) >= 12, 'palace names remain at least 12px');
-  assert.equal(await ziweiScenario.page.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0, 'the scrollable grid does not widen the page');
+  assert.ok(await ziweiScenario.page.evaluate(() => document.documentElement.scrollWidth <= 390), 'the scrollable grid does not widen the page');
   await ziweiScenario.page.screenshot({ path: path.join(screenshotDir, 'task-18-ziwei-grid-390.png'), fullPage: true });
   await ziweiScenario.page.evaluate(() => window.__hakuTest.back.click());
   await ziweiScenario.page.waitForFunction(() => !document.querySelector('#manga-screen').hidden && document.querySelector('#ziwei-view').hidden);
@@ -465,8 +469,17 @@ try {
     await localized.page.click('#story-ziwei');
     await localized.page.waitForFunction(() => !document.querySelector('#ziwei-content').hidden);
     const chartText = await localized.page.locator('#ziwei-content').textContent();
+    if (['km', 'th'].includes(locale)) {
+      const palaceLabels = await localized.page.locator('#ziwei-list strong').allTextContents();
+      assert.equal(palaceLabels.filter((label) => /\([^)]*[\u3400-\u9fff]+\)/.test(label)).length, 12, `${locale} shows all twelve local palace names with parenthesized Chinese originals`);
+    }
     const visibleChinese = `${storyText} ${chartText}`.replace(/\([^)]*[\u3400-\u9fff][^)]*\)/g, '');
     assert.doesNotMatch(visibleChinese, /[\u3400-\u9fff]/, `${locale} story and chart do not leak untranslated Chinese outside parenthesized originals`);
+    if (locale === 'en') {
+      await localized.page.screenshot({ path: path.join(screenshotDir, 'task-18-ziwei-en-list-390.png'), fullPage: true });
+      await localized.page.click('[data-ziwei-mode="grid"]');
+      await localized.page.screenshot({ path: path.join(screenshotDir, 'task-18-ziwei-en-grid-390.png'), fullPage: true });
+    }
     assert.deepEqual(localized.errors, []);
     await localized.context.close();
   }
