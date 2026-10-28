@@ -21,6 +21,7 @@ My account owns identity display, verification/saved status, Telegram ID copy, p
 - Begin the story calls the consent endpoint exactly once only for a verified user without current v5 consent while Save remains selected. Clearing it results in no account/profile write. A failed save shows an error and still opens the questionnaire.
 - Save or renew consent is available to verified users without current v5 consent in My account.
 - Completing the final question saves one complete reading profile only with current v5 consent. Failure is non-blocking. A saved profile prefills the questionnaire and can be edited or deleted from My account. Optional gender affects only Zi Wei decade-cycle direction; chart calculation stays in the browser.
+- Zi Wei opens as a list below 420px; users can switch to the 4×4 palace grid, whose horizontal movement remains contained within the chart. Visible chart text never drops below 11px, and palace names remain at least 12px.
 - Account deletion uses the localized app dialog, traps focus, disables the destructive action while pending, keeps failures in context, and restores focus on close.
 - Export and delete are available only for a verified, saved account.
 

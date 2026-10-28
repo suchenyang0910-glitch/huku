@@ -237,6 +237,13 @@ try {
   assert.equal(renewedConsent.body.consent_current, true, 'renewed consent is current');
   assert.equal((await request('/api/telegram/account', { cookie: userSession.cookie })).body.consent_current, true,
     'account response becomes current after renewed consent');
+  const legacyProfile = { ...sampleProfile };
+  delete legacyProfile.gender;
+  const legacyCreated = await request('/api/telegram/profile', {
+    method: 'PUT', cookie: userSession.cookie, csrf: userSession.csrf, body: legacyProfile
+  });
+  assert.equal(legacyCreated.status, 200, 'older clients may omit gender');
+  assert.equal(legacyCreated.body.gender, null, 'an omitted gender is stored as null');
   const createdProfile = await request('/api/telegram/profile', {
     method: 'PUT', cookie: userSession.cookie, csrf: userSession.csrf, body: sampleProfile
   });

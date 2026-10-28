@@ -34,10 +34,24 @@ const standardBirthTime = extractFunction('standardBirthTime', 'ziweiTimeIndex',
 const ziweiTimeIndex = extractFunction('ziweiTimeIndex', 'loadIztro');
 
 const chinaDst = standardBirthTime({ date: '1990-05-15', time: '13:30', place: 'cn' });
-assert.deepEqual({ hour: chinaDst.hour, minute: chinaDst.minute }, { hour: 12, minute: 30 });
+assert.deepEqual({ year: chinaDst.year, month: chinaDst.month, day: chinaDst.day, hour: chinaDst.hour, minute: chinaDst.minute }, { year: 1990, month: 5, day: 15, hour: 12, minute: 30 });
 assert.equal(ziweiTimeIndex(chinaDst.hour), 6, '13:30 China DST uses 12:30 standard time and the 午 index');
+const chinaMidnight = standardBirthTime({ date: '1990-05-15', time: '00:30', place: 'cn' });
+assert.deepEqual({ year: chinaMidnight.year, month: chinaMidnight.month, day: chinaMidnight.day, hour: chinaMidnight.hour, minute: chinaMidnight.minute }, { year: 1990, month: 5, day: 14, hour: 23, minute: 30 }, 'DST conversion can cross into the previous standard-time date');
+const chinaMidnightChart = astro.bySolar(`${chinaMidnight.year}-${chinaMidnight.month}-${chinaMidnight.day}`, ziweiTimeIndex(chinaMidnight.hour), '男');
+assert.deepEqual(Array.from(chinaMidnightChart.palaces.find((palace) => palace.name === '命宫').majorStars, (star) => star.name), ['天梁'], 'the cross-midnight chart uses 1990-5-14 rather than the civil date');
+assert.match(html, /date=\[standard\.year,standard\.month,standard\.day\]\.join\('-'\)/, 'createZiweiChart passes the standard-time date to bySolar');
+const cambodiaLate = standardBirthTime({ date: '1990-05-15', time: '23:30', place: 'kh' });
+assert.deepEqual({ year: cambodiaLate.year, month: cambodiaLate.month, day: cambodiaLate.day, hour: cambodiaLate.hour, minute: cambodiaLate.minute }, { year: 1990, month: 5, day: 15, hour: 23, minute: 30 }, 'a place without DST keeps its civil date and time');
+const chinaDayChart = astro.bySolar(`${chinaDst.year}-${chinaDst.month}-${chinaDst.day}`, ziweiTimeIndex(chinaDst.hour), '男');
+const chinaSoul = chinaDayChart.palaces.find((palace) => palace.name === '命宫');
+assert.deepEqual([chinaSoul.heavenlyStem + chinaSoul.earthlyBranch, Array.from(chinaSoul.majorStars, (star) => star.name), chinaDayChart.fiveElementsClass], ['丁亥', ['天梁'], '土五局'], 'the daytime DST fixture keeps the expected Life Palace');
 assert.equal(ziweiTimeIndex(23), 12, '23:30 uses the late-Zi index');
 assert.equal(ziweiTimeIndex(0), 0, '00:30 uses the early-Zi index');
+
+const baziCrossMidnight = fourPillars(1990, 5, 15, 0, 30, 'Asia/Shanghai', true);
+assert.equal('甲乙丙丁戊己庚辛壬癸'[baziCrossMidnight.day.stem] + '子丑寅卯辰巳午未申酉戌亥'[baziCrossMidnight.day.branch], '庚辰', 'BaZi applies its 23:00 day boundary to the same standard-time date');
+assert.equal('甲乙丙丁戊己庚辛壬癸'[baziCrossMidnight.hour.stem] + '子丑寅卯辰巳午未申酉戌亥'[baziCrossMidnight.hour.branch], '丙子');
 
 const leap = astro.bySolar('2020-5-23', 6, '女');
 assert.match(leap.lunarDate, /闰四月/, 'a leap-fourth-month date produces a chart with the default iztro convention');

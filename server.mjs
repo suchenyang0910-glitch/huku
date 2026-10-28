@@ -441,7 +441,8 @@ function profilePayload(row) {
 
 function validateReadingProfile(body) {
   const fields = ['birth_date', 'birth_time', 'unknown_time', 'term_side', 'place', 'gender', 'relationship', 'concern', 'duration'];
-  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some((key) => !fields.includes(key)) || fields.some((key) => !Object.hasOwn(body, key))) {
+  const required = fields.filter((field) => field !== 'gender');
+  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some((key) => !fields.includes(key)) || required.some((key) => !Object.hasOwn(body, key))) {
     throw Object.assign(new Error('profile_invalid'), { status: 400 });
   }
   if (!profilePlaces.includes(body.place)) throw Object.assign(new Error('place_invalid'), { status: 400 });
@@ -459,11 +460,12 @@ function validateReadingProfile(body) {
     throw Object.assign(new Error('birth_time_invalid'), { status: 400 });
   }
   if (!['', 'before', 'after', 'unknown'].includes(body.term_side)) throw Object.assign(new Error('term_side_invalid'), { status: 400 });
-  if (body.gender !== null && !['male', 'female', 'undisclosed'].includes(body.gender)) throw Object.assign(new Error('gender_invalid'), { status: 400 });
+  const gender = Object.hasOwn(body, 'gender') ? body.gender : null;
+  if (gender !== null && !['male', 'female', 'undisclosed'].includes(gender)) throw Object.assign(new Error('gender_invalid'), { status: 400 });
   for (const field of ['relationship', 'concern', 'duration']) {
     if (!Number.isInteger(body[field]) || body[field] < 0 || body[field] > 3) throw Object.assign(new Error(`${field}_invalid`), { status: 400 });
   }
-  return body;
+  return { ...body, gender };
 }
 
 function clientIp(req) {
