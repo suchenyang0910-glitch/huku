@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Haku 插画挑选</title>
+  <style>
+    :root{color-scheme:dark;font:16px/1.45 system-ui,sans-serif;background:#15231f;color:#f1f3ed}body{max-width:1300px;margin:auto;padding:32px}header{display:flex;align-items:end;justify-content:space-between;gap:24px;position:sticky;top:0;z-index:2;background:#15231fee;padding:16px 0}h1,h2,h3{margin:0}.page-group{border-top:1px solid #52675e;padding:32px 0}.scene{padding:22px 0;border-top:1px solid #344a41}.scene:first-of-type{border-top:0}.scene-note{margin:5px 0 14px;color:#bdc9c1}.candidates{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.candidate{position:relative;display:grid;gap:8px;border:2px solid transparent;border-radius:14px;padding:8px;background:#203029;cursor:pointer}.candidate:has(input:checked){border-color:#e1c17a}.candidate img{display:block;width:100%;aspect-ratio:1;object-fit:cover;border-radius:9px;background:#293a33}.candidate input{position:absolute;top:16px;left:16px;width:20px;height:20px;accent-color:#79a58a}.missing{display:none;position:absolute;inset:45% 12px auto;text-align:center;color:#bdc9c1}.candidate img.is-missing+.missing{display:block}button{border:0;border-radius:9px;padding:12px 18px;background:#79a58a;color:#10201a;font-weight:700}#status{min-height:24px;margin:8px 0 0;color:#e1c17a}@media(max-width:700px){body{padding:18px}.candidates{grid-template-columns:1fr}header{align-items:start;flex-direction:column}}
+  </style>
+</head>
+<body>
+  <header><div><h1>Haku 故事插画挑选</h1><p>每个场景选择 1 张候选，再导出 <code>selected.json</code>。</p><p id="status" role="status" aria-live="polite"></p></div><button id="export" type="button">导出 selected.json</button></header>
+  <main id="review"></main>
+  <script src="private/review-data.js"></script>
+  <script>
+    const manifest=globalThis.HAKU_ILLUSTRATION_MANIFEST,review=document.querySelector('#review'),status=document.querySelector('#status');
+    const pageNames={0:'备用',1:'第 1 页 · 开场',2:'第 2 页 · 日主',3:'第 3 页 · 五行分布',4:'第 4 页 · 现状',5:'第 5 页 · 心事',6:'第 6 页 · 行动'};
+    for(const page of [1,2,3,4,5,6,0]){const group=document.createElement('section');group.className='page-group';group.innerHTML=`<h2>${pageNames[page]}</h2>`;for(const scene of manifest.scenes.filter(scene=>scene.page===page)){const section=document.createElement('section');section.className='scene';section.innerHTML=`<h3>${scene.id}</h3><p class="scene-note">${scene.note_zh}</p><div class="candidates">${Array.from({length:manifest.output.candidates_per_scene},(_,index)=>index+1).map(number=>`<label class="candidate"><input type="radio" name="${scene.id}" value="candidates/${scene.id}/candidate-${number}.webp" aria-label="选择 ${scene.id} 候选 ${number}"><img src="candidates/${scene.id}/candidate-${number}.webp" alt="${scene.note_zh} · 候选 ${number}"><span class="missing">尚未生成</span><span>候选 ${number}</span></label>`).join('')}</div>`;group.append(section)}review.append(group)}
+    for(const image of document.images)image.addEventListener('error',()=>image.classList.add('is-missing'));
+    document.querySelector('#export').addEventListener('click',()=>{const selections={};for(const scene of manifest.scenes){const selected=document.querySelector(`input[name="${scene.id}"]:checked`);if(!selected){status.textContent=`请先选择：${scene.id}`;document.querySelector(`input[name="${scene.id}"]`).focus();return}selections[scene.id]=selected.value}status.textContent='已导出。';const body=JSON.stringify({version:1,service:'OpenAI Images API',model:null,selections},null,2)+'\n';const link=document.createElement('a');link.href=URL.createObjectURL(new Blob([body],{type:'application/json'}));link.download='selected.json';link.click();URL.revokeObjectURL(link.href)});
+  </script>
+</body>
+</html>

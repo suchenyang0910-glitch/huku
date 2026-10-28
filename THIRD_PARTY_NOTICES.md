@@ -1,5 +1,9 @@
 # Third-party notices
 
+## Haku story illustrations
+
+The published story illustrations were generated with Codex's built-in `image_gen`. The visual references are Haku-owned artwork stored in `art/illustrations/reference/`. Illustration generation did not use or transmit Haku user data.
+
 ## iztro 2.6.3
 
 - Author: SylarLong and contributors

@@ -1,0 +1,396 @@
+[
+  {
+    "id": "p1-opening-a",
+    "page": 1,
+    "show_when": {
+      "birth_day_parity": "odd"
+    }
+  },
+  {
+    "id": "p1-opening-b",
+    "page": 1,
+    "show_when": {
+      "birth_day_parity": "even"
+    }
+  },
+  {
+    "id": "p2-daymaster-wood",
+    "page": 2,
+    "show_when": {
+      "day_element": "wood"
+    }
+  },
+  {
+    "id": "p2-daymaster-fire",
+    "page": 2,
+    "show_when": {
+      "day_element": "fire"
+    }
+  },
+  {
+    "id": "p2-daymaster-earth",
+    "page": 2,
+    "show_when": {
+      "day_element": "earth"
+    }
+  },
+  {
+    "id": "p2-daymaster-metal",
+    "page": 2,
+    "show_when": {
+      "day_element": "metal"
+    }
+  },
+  {
+    "id": "p2-daymaster-water",
+    "page": 2,
+    "show_when": {
+      "day_element": "water"
+    }
+  },
+  {
+    "id": "p3-strongest-wood",
+    "page": 3,
+    "show_when": {
+      "strongest_element": "wood",
+      "strongest_stable": true
+    }
+  },
+  {
+    "id": "p3-strongest-fire",
+    "page": 3,
+    "show_when": {
+      "strongest_element": "fire",
+      "strongest_stable": true
+    }
+  },
+  {
+    "id": "p3-strongest-earth",
+    "page": 3,
+    "show_when": {
+      "strongest_element": "earth",
+      "strongest_stable": true
+    }
+  },
+  {
+    "id": "p3-strongest-metal",
+    "page": 3,
+    "show_when": {
+      "strongest_element": "metal",
+      "strongest_stable": true
+    }
+  },
+  {
+    "id": "p3-strongest-water",
+    "page": 3,
+    "show_when": {
+      "strongest_element": "water",
+      "strongest_stable": true
+    }
+  },
+  {
+    "id": "p3-balanced",
+    "page": 3,
+    "show_when": {
+      "strongest_stable": false
+    }
+  },
+  {
+    "id": "p4-love-hoping",
+    "page": 4,
+    "show_when": {
+      "theme": "love",
+      "state": "hoping"
+    }
+  },
+  {
+    "id": "p4-love-together",
+    "page": 4,
+    "show_when": {
+      "theme": "love",
+      "state": "together"
+    }
+  },
+  {
+    "id": "p4-love-complicated",
+    "page": 4,
+    "show_when": {
+      "theme": "love",
+      "state": "complicated"
+    }
+  },
+  {
+    "id": "p4-love-healing",
+    "page": 4,
+    "show_when": {
+      "theme": "love",
+      "state": "healing"
+    }
+  },
+  {
+    "id": "p4-wealth-steady",
+    "page": 4,
+    "show_when": {
+      "theme": "wealth",
+      "state": "steady"
+    }
+  },
+  {
+    "id": "p4-wealth-tight",
+    "page": 4,
+    "show_when": {
+      "theme": "wealth",
+      "state": "tight"
+    }
+  },
+  {
+    "id": "p4-wealth-changing",
+    "page": 4,
+    "show_when": {
+      "theme": "wealth",
+      "state": "changing"
+    }
+  },
+  {
+    "id": "p4-wealth-planning",
+    "page": 4,
+    "show_when": {
+      "theme": "wealth",
+      "state": "planning"
+    }
+  },
+  {
+    "id": "p4-career-searching",
+    "page": 4,
+    "show_when": {
+      "theme": "career",
+      "state": "searching"
+    }
+  },
+  {
+    "id": "p4-career-weary",
+    "page": 4,
+    "show_when": {
+      "theme": "career",
+      "state": "weary"
+    }
+  },
+  {
+    "id": "p4-career-crossroads",
+    "page": 4,
+    "show_when": {
+      "theme": "career",
+      "state": "crossroads"
+    }
+  },
+  {
+    "id": "p4-career-pushing",
+    "page": 4,
+    "show_when": {
+      "theme": "career",
+      "state": "pushing"
+    }
+  },
+  {
+    "id": "p4-social-new-friends",
+    "page": 4,
+    "show_when": {
+      "theme": "social",
+      "state": "new-friends"
+    }
+  },
+  {
+    "id": "p4-social-steady-circle",
+    "page": 4,
+    "show_when": {
+      "theme": "social",
+      "state": "steady-circle"
+    }
+  },
+  {
+    "id": "p4-social-friction",
+    "page": 4,
+    "show_when": {
+      "theme": "social",
+      "state": "friction"
+    }
+  },
+  {
+    "id": "p4-social-lonely",
+    "page": 4,
+    "show_when": {
+      "theme": "social",
+      "state": "lonely"
+    }
+  },
+  {
+    "id": "p5-love-clarity",
+    "page": 5,
+    "show_when": {
+      "theme": "love",
+      "concern": "clarity"
+    }
+  },
+  {
+    "id": "p5-love-letting-go",
+    "page": 5,
+    "show_when": {
+      "theme": "love",
+      "concern": "letting-go"
+    }
+  },
+  {
+    "id": "p5-love-uncertainty",
+    "page": 5,
+    "show_when": {
+      "theme": "love",
+      "concern": "uncertainty"
+    }
+  },
+  {
+    "id": "p5-love-trust",
+    "page": 5,
+    "show_when": {
+      "theme": "love",
+      "concern": "trust"
+    }
+  },
+  {
+    "id": "p5-wealth-not-enough",
+    "page": 5,
+    "show_when": {
+      "theme": "wealth",
+      "concern": "not-enough"
+    }
+  },
+  {
+    "id": "p5-wealth-risk",
+    "page": 5,
+    "show_when": {
+      "theme": "wealth",
+      "concern": "risk"
+    }
+  },
+  {
+    "id": "p5-wealth-spending",
+    "page": 5,
+    "show_when": {
+      "theme": "wealth",
+      "concern": "spending"
+    }
+  },
+  {
+    "id": "p5-wealth-security",
+    "page": 5,
+    "show_when": {
+      "theme": "wealth",
+      "concern": "security"
+    }
+  },
+  {
+    "id": "p5-career-unseen",
+    "page": 5,
+    "show_when": {
+      "theme": "career",
+      "concern": "unseen"
+    }
+  },
+  {
+    "id": "p5-career-wrong-choice",
+    "page": 5,
+    "show_when": {
+      "theme": "career",
+      "concern": "wrong-choice"
+    }
+  },
+  {
+    "id": "p5-career-burnout",
+    "page": 5,
+    "show_when": {
+      "theme": "career",
+      "concern": "burnout"
+    }
+  },
+  {
+    "id": "p5-career-self-doubt",
+    "page": 5,
+    "show_when": {
+      "theme": "career",
+      "concern": "self-doubt"
+    }
+  },
+  {
+    "id": "p5-social-speak-up",
+    "page": 5,
+    "show_when": {
+      "theme": "social",
+      "concern": "speak-up"
+    }
+  },
+  {
+    "id": "p5-social-misunderstood",
+    "page": 5,
+    "show_when": {
+      "theme": "social",
+      "concern": "misunderstood"
+    }
+  },
+  {
+    "id": "p5-social-accommodating",
+    "page": 5,
+    "show_when": {
+      "theme": "social",
+      "concern": "accommodating"
+    }
+  },
+  {
+    "id": "p5-social-let-go",
+    "page": 5,
+    "show_when": {
+      "theme": "social",
+      "concern": "let-go"
+    }
+  },
+  {
+    "id": "p6-action-wood",
+    "page": 6,
+    "show_when": {
+      "action_element": "wood"
+    }
+  },
+  {
+    "id": "p6-action-fire",
+    "page": 6,
+    "show_when": {
+      "action_element": "fire"
+    }
+  },
+  {
+    "id": "p6-action-earth",
+    "page": 6,
+    "show_when": {
+      "action_element": "earth"
+    }
+  },
+  {
+    "id": "p6-action-metal",
+    "page": 6,
+    "show_when": {
+      "action_element": "metal"
+    }
+  },
+  {
+    "id": "p6-action-water",
+    "page": 6,
+    "show_when": {
+      "action_element": "water"
+    }
+  },
+  {
+    "id": "fallback",
+    "page": 0,
+    "show_when": {
+      "fallback": true
+    }
+  }
+]
