@@ -476,6 +476,14 @@ try {
     const visibleChinese = `${storyText} ${chartText}`.replace(/\([^)]*[\u3400-\u9fff][^)]*\)/g, '');
     assert.doesNotMatch(visibleChinese, /[\u3400-\u9fff]/, `${locale} story and chart do not leak untranslated Chinese outside parenthesized originals`);
     if (locale === 'en') {
+      assert.match(storyText, /^Your Life Palace centers on Tian Liang \(Protector\):/, 'English story uses the Haku star name in a natural sentence');
+      assert.equal(await localized.page.locator('#ziwei-list strong').first().textContent(), 'Life', 'accessible palace list begins with the Life Palace');
+      assert.match(chartText, /Ding Hai/, 'English stems and branches use pinyin');
+      assert.match(chartText, /Tian Liang \(Protector\)/, 'English chart uses Haku pinyin star names');
+      assert.match(chartText, /Earth fifth class/, 'English chart uses Haku five-elements class names');
+      assert.match(chartText, /(?:Brilliant|Strong|Gained|Favorable|Neutral|Weak|Fallen)/, 'English chart uses word-based brightness labels');
+      assert.match(chartText, /Lu \(Prosperity\)|Quan \(Power\)|Ke \(Recognition\)|Ji \(Challenge\)/, 'English chart uses named annual transformations');
+      assert.doesNotMatch(chartText, /\[[+-]\d\]|\bwoo\b/, 'English chart does not expose iztro symbolic brightness or romanization');
       await localized.page.screenshot({ path: path.join(screenshotDir, 'task-18-ziwei-en-list-390.png'), fullPage: true });
       await localized.page.click('[data-ziwei-mode="grid"]');
       await localized.page.screenshot({ path: path.join(screenshotDir, 'task-18-ziwei-en-grid-390.png'), fullPage: true });

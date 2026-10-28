@@ -8,7 +8,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const html = await readFile(join(ROOT, 'haku.html'), 'utf8');
 const server = await readFile(join(ROOT, 'server.mjs'), 'utf8');
 let source = html.slice(html.indexOf('const T ='), html.indexOf('const $='));
-source = source.replace('const T =', 'globalThis.T =').replace('const F=', 'globalThis.F=').replace('const A=', 'globalThis.A=').replace('const ZIWEI_COPY=', 'globalThis.ZIWEI_COPY=');
+source = source.replace('const T =', 'globalThis.T =').replace('const F=', 'globalThis.F=').replace('const A=', 'globalThis.A=').replace('const ZIWEI_COPY=', 'globalThis.ZIWEI_COPY=').replace('const ZIWEI_LOCAL=', 'globalThis.ZIWEI_LOCAL=');
 const copy = {};
 vm.runInNewContext(source, copy);
 
@@ -41,6 +41,18 @@ for (const locale of ['en', 'vi', 'zh', 'km', 'th']) {
   }
 }
 assert.ok(Object.keys(copy.ZIWEI_COPY.en.themes).length === 14, 'all 14 major stars have reflective themes');
+for (const locale of ['th', 'km']) {
+  for (const brightness of ['庙', '旺', '得', '利', '平', '不', '陷']) {
+    assert.notEqual(copy.ZIWEI_LOCAL[locale].brightness[brightness], copy.ZIWEI_LOCAL[locale].brightnessFallback, `${locale} localizes iztro brightness ${brightness} without using brightnessFallback`);
+  }
+  assert.equal(copy.ZIWEI_LOCAL[locale].brightness['不得地'], undefined, `${locale} does not retain the invalid 不得地 brightness key`);
+}
+assert.equal(copy.ZIWEI_LOCAL.en.main[11], 'Tian Liang (Protector)', 'English uses Haku pinyin and meaning for Tian Liang');
+assert.equal(copy.ZIWEI_LOCAL.en.main[3], 'Wu Qu (Wealth & discipline)', 'English uses Haku pinyin and meaning for Wu Qu');
+assert.deepEqual(Object.values(copy.ZIWEI_LOCAL.en.brightness), ['Brilliant', 'Strong', 'Gained', 'Favorable', 'Neutral', 'Weak', 'Fallen'], 'English brightness labels are readable words');
+assert.deepEqual(Object.values(copy.ZIWEI_LOCAL.en.mutagen), ['Lu (Prosperity)', 'Quan (Power)', 'Ke (Recognition)', 'Ji (Challenge)'], 'English transformations use Haku terms');
+assert.doesNotMatch(copy.T.km.ziweiFootnote, /Lichun/i, 'Khmer year-boundary note does not leave Lichun in English');
+assert.match(copy.T.km.ziweiFootnote, /ចូលនិទាឃរដូវ \(立春\)/, 'Khmer year-boundary note names Start of Spring in Khmer');
 for (const locale of ['en', 'vi', 'zh', 'km', 'th']) assert.equal(copy.F[locale].steps.length, 6, `${locale} has six questionnaire steps`);
 assert.match(html, /id="start-reading"[\s\S]+id="consent-panel"[\s\S]+class="moon-art"/, 'home orders start action, optional consent, then illustration');
 assert.doesNotMatch(html, /id="continue"/, 'standalone Continue with Telegram action is removed');
