@@ -675,6 +675,15 @@ const server = createServer(async (req, res) => {
       return res.end(req.method === 'HEAD' ? undefined : asset);
     }
 
+    const storyAssetRoute = path.match(/^\/assets\/story\/([a-z0-9-]+-(?:640|1080)\.webp)$/);
+    if (storyAssetRoute && ['GET', 'HEAD'].includes(req.method)) {
+      let asset;
+      try { asset = readFileSync(resolve(ROOT, 'public', 'assets', 'story', storyAssetRoute[1])); }
+      catch { return json(res, 404, { error: 'not_found' }); }
+      res.writeHead(200, { 'Content-Type': 'image/webp', 'Cache-Control': 'public, max-age=31536000, immutable' });
+      return res.end(req.method === 'HEAD' ? undefined : asset);
+    }
+
     const assetRoute = path.match(/^\/assets\/([a-z0-9-]+\.(?:webp|png))$/);
     if (assetRoute && ['GET', 'HEAD'].includes(req.method)) {
       let asset;

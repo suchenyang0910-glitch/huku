@@ -2,3 +2,6 @@
 data/
 node_modules/
 npm-debug.log*
+/art/illustrations/private/
+/art/illustrations/candidates/
+/art/illustrations/contact-sheets/

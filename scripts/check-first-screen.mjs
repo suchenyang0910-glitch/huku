@@ -13,6 +13,7 @@ try {
 
 const root = path.resolve(import.meta.dirname, '..');
 const screenshotDir = path.join(root, 'docs', 'screenshots');
+const storyFixture = await readFile(path.join(root, 'art', 'illustrations', 'reference', 'moonlit-fox-lantern.webp'));
 const contentTypes = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.webp': 'image/webp', '.png': 'image/png', '.svg': 'image/svg+xml' };
 const server = createServer(async (request, response) => {
   try {
@@ -36,8 +37,15 @@ const locales = ['en', 'vi', 'zh', 'km', 'th'];
 const states = ['unverified', 'verified-unsaved', 'saved'];
 const viewports = [{ width: 390, height: 750 }, { width: 360, height: 640 }];
 
-async function openScenario({ locale = 'en', state = 'verified-unsaved', viewport = viewports[0], consentFails = false, profileFails = false, telegram = true, colorScheme = 'light' } = {}) {
-  const context = await browser.newContext({ viewport });
+async function openScenario({ locale = 'en', state = 'verified-unsaved', viewport = viewports[0], consentFails = false, profileFails = false, telegram = true, colorScheme = 'light', storyMode = 'ok', deviceScaleFactor = 1 } = {}) {
+  const context = await browser.newContext({ viewport, deviceScaleFactor });
+  const storyRequests = [];
+  await context.route('**/assets/story/**', route => {
+    const pathname = new URL(route.request().url()).pathname;
+    storyRequests.push(pathname);
+    const fail = storyMode === 'fail' || (storyMode === 'fallback' && !pathname.includes('/fallback-'));
+    return fail ? route.abort('failed') : route.fulfill({ status: 200, contentType: 'image/webp', body: storyFixture });
+  });
   await context.route('https://telegram.org/**', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
   await context.route('https://fonts.googleapis.com/**', route => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
   await context.addInitScript(({ locale, state, consentFails, profileFails, telegram, colorScheme }) => {
@@ -119,7 +127,7 @@ async function openScenario({ locale = 'en', state = 'verified-unsaved', viewpor
   await page.goto(`http://mini.localhost:${port}/haku.html`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(telegram => window.__hakuTest && window.__hakuTest.authCalls === (telegram ? 1 : 0), telegram);
   await page.waitForTimeout(20);
-  return { context, page, errors };
+  return { context, page, errors, storyRequests };
 }
 
 async function completeReading(page, { gender = 'male', unknownTime = false } = {}) {
@@ -385,6 +393,68 @@ try {
   assert.deepEqual(profileScenario.errors, []);
   await profileScenario.context.close();
 
+  const illustrated = await openScenario({ locale: 'zh', state: 'saved', viewport: { width: 390, height: 750 }, deviceScaleFactor: 2 });
+  assert.deepEqual(illustrated.storyRequests, [], 'home does not request story illustrations');
+  await completeReading(illustrated.page);
+  await illustrated.page.waitForFunction(() => !document.querySelector('#manga-screen').hidden && document.querySelector('#story-illustration').classList.contains('is-loaded'));
+  const illustrationIds = [];
+  for (let index = 0; index < 6; index++) {
+    if (index) await illustrated.page.locator(`[data-page="${index}"]`).click();
+    await illustrated.page.waitForFunction(expected => document.querySelector('#story-illustration').classList.contains('is-loaded') && document.querySelector('#story-illustration').dataset.scene.startsWith(expected), `p${index + 1}-`);
+    illustrationIds.push(await illustrated.page.locator('#story-illustration').getAttribute('data-scene'));
+  }
+  assert.equal(new Set(illustrationIds).size, 6, 'all six story pages resolve distinct scene illustrations');
+  assert.equal(illustrationIds[0], 'p1-opening-a');
+  assert.match(illustrationIds[1], /^p2-daymaster-(wood|fire|earth|metal|water)$/);
+  assert.equal(illustrationIds[2], 'p3-balanced', 'a tied strongest element uses the balanced scene');
+  assert.equal(illustrationIds[3], 'p4-love-hoping');
+  assert.equal(illustrationIds[4], 'p5-love-clarity');
+  assert.match(illustrationIds[5], /^p6-action-(wood|fire|earth|metal|water)$/);
+  assert.ok(illustrated.storyRequests.some(pathname => pathname.endsWith('-1080.webp')), '390px DPR preloads responsive 1080px story artwork');
+  assert.equal(await illustrated.page.locator('#story-illustration').evaluate(image => { const rect=image.getBoundingClientRect();return document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2)===image }), true, 'loaded artwork paints above the code-drawn fallback');
+  await illustrated.page.waitForTimeout(400);
+  assert.equal(await illustrated.page.locator('#story-illustration').evaluate(image => getComputedStyle(image).opacity), '1', 'story artwork finishes its fade-in');
+  const artRatio = await illustrated.page.locator('.scene-art').evaluate(element => { const box=element.getBoundingClientRect();return { ratio:box.width/box.height,height:box.height } });
+  assert.ok(artRatio.ratio >= .95 && artRatio.ratio <= 1.05, `390px story art is square (ratio ${artRatio.ratio})`);
+  assert.ok(artRatio.height <= 360, '390px story art stays within the 360px height cap');
+  assert.equal(await illustrated.page.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0, 'illustrated story has no horizontal overflow at 390px');
+  await illustrated.page.screenshot({ path: path.join(screenshotDir, 'task-19-story-light-390.png'), fullPage: true });
+  assert.deepEqual(illustrated.errors, []);
+  await illustrated.context.close();
+
+  const fallbackStory = await openScenario({ locale: 'zh', state: 'saved', viewport: { width: 390, height: 750 }, storyMode: 'fallback' });
+  await completeReading(fallbackStory.page);
+  await fallbackStory.page.waitForFunction(() => !document.querySelector('#manga-screen').hidden && document.querySelector('#story-illustration').classList.contains('is-loaded') && document.querySelector('#story-illustration').dataset.asset === 'fallback');
+  assert.match(fallbackStory.storyRequests[0], /p1-opening-a-(?:640|1080)\.webp$/);
+  assert.match(fallbackStory.storyRequests[1], /fallback-(?:640|1080)\.webp$/, 'failed scene loads the published fallback next');
+  assert.deepEqual(fallbackStory.errors, []);
+  await fallbackStory.context.close();
+
+  const codeFallback = await openScenario({ locale: 'zh', state: 'saved', viewport: { width: 390, height: 750 }, storyMode: 'fail' });
+  await completeReading(codeFallback.page);
+  await codeFallback.page.waitForFunction(() => !document.querySelector('#manga-screen').hidden && document.querySelector('#story-illustration').dataset.scene === 'p1-opening-a');
+  await codeFallback.page.waitForTimeout(80);
+  assert.equal(await codeFallback.page.locator('#story-illustration').evaluate(image => image.classList.contains('is-loaded')), false, 'failed scene and fallback stay transparent');
+  assert.equal(await codeFallback.page.locator('.scene-moon').isVisible(), true, 'failed fallback keeps the code-drawn scene visible');
+  assert.deepEqual(codeFallback.errors, []);
+  await codeFallback.context.close();
+
+  const darkIllustrated = await openScenario({ locale: 'vi', state: 'saved', viewport: { width: 390, height: 750 }, colorScheme: 'dark' });
+  await completeReading(darkIllustrated.page, { gender: 'undisclosed' });
+  await darkIllustrated.page.waitForFunction(() => !document.querySelector('#manga-screen').hidden && document.querySelector('#story-illustration').classList.contains('is-loaded'));
+  await darkIllustrated.page.locator('[data-page="3"]').click();
+  await darkIllustrated.page.waitForFunction(() => document.querySelector('#story-illustration').dataset.scene.startsWith('p4-') && document.querySelector('#story-illustration').classList.contains('is-loaded'));
+  await darkIllustrated.page.waitForTimeout(400);
+  const viStoryFonts = await darkIllustrated.page.evaluate(() => ({ title:getComputedStyle(document.querySelector('.reader-head h2')).fontFamily,body:getComputedStyle(document.querySelector('#comic-line')).fontFamily }));
+  assert.doesNotMatch(`${viStoryFonts.title} ${viStoryFonts.body}`, /Georgia/i, 'Vietnamese story title and body never use Georgia');
+  assert.match(`${viStoryFonts.title} ${viStoryFonts.body}`, /Be Vietnam Pro|Arial|sans-serif/i, 'Vietnamese story uses a Vietnamese-safe sans-serif stack');
+  assert.deepEqual(await darkIllustrated.page.locator('.comic-caption').evaluate(element => ({ background: getComputedStyle(element).backgroundColor, color: getComputedStyle(element).color })), { background: 'rgb(255, 253, 248)', color: 'rgb(36, 51, 49)' }, 'dark theme keeps the story caption on readable warm paper');
+  assert.equal(await darkIllustrated.page.evaluate(() => { const art=document.querySelector('.scene-art').getBoundingClientRect(),caption=document.querySelector('.comic-caption').getBoundingClientRect();return Math.round(art.bottom) <= Math.round(caption.top) && art.height >= 260 }), true, 'long localized copy follows the illustration without covering it');
+  await darkIllustrated.page.screenshot({ path: path.join(screenshotDir, 'task-19-story-dark-390.png'), fullPage: true });
+  assert.equal(await darkIllustrated.page.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0, 'dark illustrated story has no horizontal overflow at 390px');
+  assert.deepEqual(darkIllustrated.errors, []);
+  await darkIllustrated.context.close();
+
   const ziweiScenario = await openScenario({ locale: 'zh', state: 'saved', viewport: { width: 390, height: 750 } });
   assert.equal(await ziweiScenario.page.evaluate(() => performance.getEntriesByType('resource').some(entry => entry.name.includes('iztro-2.6.3.min.js'))), false, 'home does not request iztro');
   await completeReading(ziweiScenario.page, { gender: 'male' });
@@ -509,7 +579,7 @@ try {
   assert.deepEqual(oldConsent.errors, []);
   await oldConsent.context.close();
 
-  console.log('check-first-screen.mjs: layout, Telegram controls, shared wheels, reading profiles, lazy Zi Wei, chart routing, and screenshots pass.');
+  console.log('check-first-screen.mjs: layout, Telegram controls, shared wheels, reading profiles, lazy story art and fallback, Zi Wei, chart routing, and screenshots pass.');
 } finally {
   await browser.close();
   await new Promise(resolve => server.close(resolve));

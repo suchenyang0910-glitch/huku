@@ -2,3 +2,6 @@
 data/
 .git
 node_modules/
+art/
+scripts/generate-illustrations.mjs
+scripts/build-illustrations.mjs

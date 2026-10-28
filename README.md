@@ -147,6 +147,30 @@ node scripts/generate-solar-terms.mjs
 
 The checked-in validation compares the generated UTC minutes with published tables from the National Astronomical Observatory of Japan and Taipei Astronomical Museum, allowing at most one minute of difference.
 
+### Story illustration library
+
+The six-page reader uses a 51-scene square illustration plan: five-element scenes, the current love theme, reserved wealth/career/social theme scenes, and a published fallback. The public `art/illustrations/scenes.json` contains only scene IDs, page numbers, and selection rules. Illustration prompts are stored locally under `art/illustrations/private/` and are not committed. The local authoring script refreshes both the private files and the prompt-free public scene index. The two compressed files in `art/illustrations/reference/` come from the user-provided project-root images `月下白狐与灯-4.png` and `月下河畔的白狐-2.png`; the original PNG files and the two square logo images are not committed or used as references. These reference images contain no user data.
+
+Candidate generation is a local-only authoring step using the OpenAI Images edit API with both reference images. It never runs in the browser, server, Docker image, or production environment, and no Haku user data is sent to the image service. The API key is read only from `OPENAI_API_KEY`; the model and current per-image price are explicit environment configuration so a stale model or price is never assumed:
+
+```sh
+OPENAI_IMAGE_MODEL=<supported-edit-model> OPENAI_IMAGE_UNIT_PRICE_USD=<price> node scripts/generate-illustrations.mjs
+OPENAI_IMAGE_MODEL=<supported-edit-model> OPENAI_IMAGE_UNIT_PRICE_USD=<price> OPENAI_API_KEY=<secret> node scripts/generate-illustrations.mjs --yes
+node scripts/generate-illustrations.mjs --only p2-daymaster-water --yes
+```
+
+The first command is the default dry run and prints the pending image count and configured cost estimate. Generation requires the ignored local private manifest; set `HAKU_ILLUSTRATION_PROMPTS` only when it lives elsewhere. It creates two 1024×1024 candidates per scene under the gitignored `art/illustrations/candidates/` directory and skips files already present. One failed image does not stop the batch: failed scene IDs are listed at the end and can be retried with `--only`. Open `art/illustrations/review.html` directly in a browser after generating the local review data. Choose one candidate for every scene, download `selected.json`, and replace `art/illustrations/selected.json`. Record the generation model in that file before committing the human selection.
+
+The build uses Playwright Chromium's canvas WebP encoder, already used by the browser acceptance checks; no image package is added to the application:
+
+```sh
+npm install --no-save --package-lock=false playwright
+npx playwright install chromium
+node scripts/build-illustrations.mjs
+```
+
+It center-crops selected candidates into square 640×640 and 1080×1080 WebP files under `public/assets/story/`, enforcing 80KB and 160KB limits. The normal build requires a reviewed selection for all 51 scenes. Before the wealth/career/social themes are ready, `node scripts/build-illustrations.mjs --allow-missing-themes` may omit only those reserved theme scenes; the fallback, all shared scenes, and all love scenes remain mandatory. At runtime the reader tries the selected scene, then the published fallback image, then the existing code-drawn scene. Deploy only after the required selections are human-reviewed; built files are immutable versioned assets, so replace them only together with a new release.
+
 ## Storage and deployment notes
 
 - The database is `data/haku.sqlite` unless `HAKU_DB_PATH` is changed. Back it up with the service stopped or use SQLite's online backup facilities.

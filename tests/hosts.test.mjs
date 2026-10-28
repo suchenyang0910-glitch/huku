@@ -2,13 +2,15 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createServer, request as httpRequest } from 'node:http';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, rm, unlink } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const tempDir = await mkdtemp(join(tmpdir(), 'haku-hosts-test-'));
+const storyDir = join(ROOT, 'public', 'assets', 'story');
+const storyFixture = join(storyDir, 'hosts-test-640.webp');
 let serverProcess;
 
 const port = await new Promise((resolvePort, reject) => {
@@ -33,6 +35,8 @@ function request(path, { host = 'mini.example.test', method = 'GET' } = {}) {
 }
 
 try {
+  await mkdir(storyDir, { recursive: true });
+  await copyFile(join(ROOT, 'art', 'illustrations', 'reference', 'moonlit-fox-lantern.webp'), storyFixture);
   serverProcess = spawn(process.execPath, [join(ROOT, 'server.mjs')], {
     cwd: ROOT,
     env: {
@@ -84,7 +88,13 @@ try {
   assert.equal(iztro.headers['cache-control'], 'public, max-age=31536000, immutable');
   assert.ok(iztro.body.length > 400000);
 
-  for (const path of ['/assets/../server.mjs', '/assets/vendor/other.js', '/assets/iztro-2.6.3.min.js', '/assets/logo-96.svg', '/assets/LOGO.webp', '/assets/logo_96.webp']) {
+  const story = await request('/assets/story/hosts-test-640.webp');
+  assert.equal(story.status, 200, 'a versioned story illustration is served');
+  assert.equal(story.headers['content-type'], 'image/webp');
+  assert.equal(story.headers['cache-control'], 'public, max-age=31536000, immutable');
+  assert.ok(story.body.length > 0);
+
+  for (const path of ['/assets/../server.mjs', '/assets/vendor/other.js', '/assets/iztro-2.6.3.min.js', '/assets/logo-96.svg', '/assets/LOGO.webp', '/assets/logo_96.webp', '/assets/story/hosts-test-641.webp', '/assets/story/hosts-test-640.png', '/assets/story/HOSTS-test-640.webp', '/assets/story/nested/hosts-test-640.webp', '/assets/story/%2e%2e/server.mjs']) {
     assert.equal((await request(path)).status, 404, `${path} is rejected`);
   }
   assert.equal((await request('/api/health', { method: 'HEAD' })).status, 200, 'HEAD health check succeeds');
@@ -94,6 +104,8 @@ try {
     serverProcess.kill('SIGTERM');
     await new Promise((resolveExit) => serverProcess.once('exit', resolveExit));
   }
+  await unlink(storyFixture).catch(() => {});
+  await rm(storyDir).catch(() => {});
   const resolvedTemp = resolve(tempDir);
   if (resolvedTemp.startsWith(resolve(tmpdir()) + sep) && basename(resolvedTemp).startsWith('haku-hosts-test-')) {
     await rm(resolvedTemp, { recursive: true, force: true });
