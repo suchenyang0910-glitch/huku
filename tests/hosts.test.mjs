@@ -105,7 +105,6 @@ try {
     await new Promise((resolveExit) => serverProcess.once('exit', resolveExit));
   }
   await unlink(storyFixture).catch(() => {});
-  await rm(storyDir).catch(() => {});
   const resolvedTemp = resolve(tempDir);
   if (resolvedTemp.startsWith(resolve(tmpdir()) + sep) && basename(resolvedTemp).startsWith('haku-hosts-test-')) {
     await rm(resolvedTemp, { recursive: true, force: true });

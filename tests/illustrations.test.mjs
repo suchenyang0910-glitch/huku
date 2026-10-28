@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import vm from 'node:vm';
@@ -33,7 +33,24 @@ assert.match(review, /private\/review-data\.js/, 'review data remains local');
 assert.match(review, /\[1,2,3,4,5,6,0\]/, 'review groups scenes by story page and fallback');
 assert.match(review, /scene\.note_zh/);
 assert.match(review, /manifest\.output\.candidates_per_scene/);
-assert.deepEqual(selected.selections, {}, 'no illustration is published before human selection');
+assert.equal(selected.service, 'Codex image_gen');
+assert.equal(selected.model, 'unspecified');
+assert.deepEqual(Object.keys(selected.selections).sort(), scenes.map(scene => scene.id).sort(), 'selection covers all 51 scenes');
+const published = [];
+for (const scene of scenes) {
+  assert.match(selected.selections[scene.id], new RegExp(`^candidates/${scene.id}/candidate-[1-4]\\.webp$`));
+  for (const [width, limit] of [[640, 80 * 1024], [1080, 160 * 1024]]) {
+    const name = `${scene.id}-${width}.webp`;
+    const file = path.join(root, 'public', 'assets', 'story', name);
+    const info = await stat(file);
+    const header = await readFile(file);
+    assert.ok(info.size <= limit, `${name} stays within its size limit`);
+    assert.equal(header.subarray(0, 4).toString(), 'RIFF');
+    assert.equal(header.subarray(8, 12).toString(), 'WEBP');
+    published.push(name);
+  }
+}
+assert.deepEqual((await readdir(path.join(root, 'public', 'assets', 'story'))).filter(name => name.endsWith('.webp') && name !== 'hosts-test-640.webp').sort(), published.sort(), 'only the 102 selected assets are published');
 
 const missingPrompts = spawnSync(process.execPath, ['scripts/generate-illustrations.mjs'], { cwd: root, encoding: 'utf8', env: { ...process.env, HAKU_ILLUSTRATION_PROMPTS: 'art/illustrations/not-present.json' } });
 assert.notEqual(missingPrompts.status, 0, 'generation requires local authoring data');
@@ -42,12 +59,6 @@ const generator = await readFile(path.join(root, 'scripts', 'generate-illustrati
 assert.match(generator, /HAKU_ILLUSTRATION_PROMPTS/);
 assert.match(generator, /failures\.push\(scene\.id\)/);
 assert.match(generator, /Failed scene ids:/, 'individual failures are summarized after the batch');
-const build = spawnSync(process.execPath, ['scripts/build-illustrations.mjs'], { cwd: root, encoding: 'utf8' });
-assert.notEqual(build.status, 0, 'the normal build requires all 51 selections');
-assert.match(build.stderr, /Selection must cover/);
-const themeBuild = spawnSync(process.execPath, ['scripts/build-illustrations.mjs', '--allow-missing-themes'], { cwd: root, encoding: 'utf8' });
-assert.notEqual(themeBuild.status, 0, 'theme allowance still requires every non-theme scene and all love scenes');
-assert.match(themeBuild.stderr, /Selection must cover/);
 const builder = await readFile(path.join(root, 'scripts', 'build-illustrations.mjs'), 'utf8');
 assert.match(builder, /width: 640, height: 640, limit: 80 \* 1024/);
 assert.match(builder, /width: 1080, height: 1080, limit: 160 \* 1024/);

@@ -13,7 +13,6 @@ try {
 
 const root = path.resolve(import.meta.dirname, '..');
 const screenshotDir = path.join(root, 'docs', 'screenshots');
-const storyFixture = await readFile(path.join(root, 'art', 'illustrations', 'reference', 'moonlit-fox-lantern.webp'));
 const contentTypes = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.webp': 'image/webp', '.png': 'image/png', '.svg': 'image/svg+xml' };
 const server = createServer(async (request, response) => {
   try {
@@ -44,7 +43,7 @@ async function openScenario({ locale = 'en', state = 'verified-unsaved', viewpor
     const pathname = new URL(route.request().url()).pathname;
     storyRequests.push(pathname);
     const fail = storyMode === 'fail' || (storyMode === 'fallback' && !pathname.includes('/fallback-'));
-    return fail ? route.abort('failed') : route.fulfill({ status: 200, contentType: 'image/webp', body: storyFixture });
+    return fail ? route.abort('failed') : route.continue();
   });
   await context.route('https://telegram.org/**', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
   await context.route('https://fonts.googleapis.com/**', route => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
@@ -398,12 +397,17 @@ try {
   await completeReading(illustrated.page);
   await illustrated.page.waitForFunction(() => !document.querySelector('#manga-screen').hidden && document.querySelector('#story-illustration').classList.contains('is-loaded'));
   const illustrationIds = [];
+  const illustrationSources = [];
   for (let index = 0; index < 6; index++) {
     if (index) await illustrated.page.locator(`[data-page="${index}"]`).click();
     await illustrated.page.waitForFunction(expected => document.querySelector('#story-illustration').classList.contains('is-loaded') && document.querySelector('#story-illustration').dataset.scene.startsWith(expected), `p${index + 1}-`);
     illustrationIds.push(await illustrated.page.locator('#story-illustration').getAttribute('data-scene'));
+    illustrationSources.push(await illustrated.page.locator('#story-illustration').evaluate(image => image.currentSrc));
+    await illustrated.page.waitForTimeout(400);
+    await illustrated.page.screenshot({ path: path.join(screenshotDir, `task-19-story-page-${index + 1}-390.png`), fullPage: true });
   }
   assert.equal(new Set(illustrationIds).size, 6, 'all six story pages resolve distinct scene illustrations');
+  assert.equal(new Set(illustrationSources).size, 6, 'all six story pages load distinct published image files');
   assert.equal(illustrationIds[0], 'p1-opening-a');
   assert.match(illustrationIds[1], /^p2-daymaster-(wood|fire|earth|metal|water)$/);
   assert.equal(illustrationIds[2], 'p3-balanced', 'a tied strongest element uses the balanced scene');
