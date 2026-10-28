@@ -41,6 +41,13 @@ for (const locale of ['en', 'vi', 'zh', 'km', 'th']) {
     assert.ok(copy.A[locale][key], `A.${locale}.${key} is present`);
   }
 }
+assert.deepEqual(Object.fromEntries(['en', 'vi', 'zh', 'km', 'th'].map(locale => [locale, copy.A[locale].themeCounts])), {
+  en: 'Saved profiles by theme',
+  vi: 'Hồ sơ đã lưu · theo chủ đề',
+  zh: '已保存资料 · 按主题',
+  km: 'ប្រវត្តិរូបដែលបានរក្សាទុក · តាមប្រធានបទ',
+  th: 'โปรไฟล์ที่บันทึก · แยกตามหัวข้อ'
+}, 'admin theme counts are labeled as saved profiles in all locales');
 assert.ok(Object.keys(copy.ZIWEI_COPY.en.themes).length === 14, 'all 14 major stars have reflective themes');
 for (const locale of ['th', 'km']) {
   for (const brightness of ['庙', '旺', '得', '利', '平', '不', '陷']) {

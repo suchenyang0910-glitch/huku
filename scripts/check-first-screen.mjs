@@ -457,7 +457,10 @@ try {
     await completeReading(scenario.page, { theme });
     await scenario.page.waitForFunction(() => !document.querySelector('#manga-screen').hidden);
     await scenario.page.locator('[data-page="3"]').click();
-    await scenario.page.waitForFunction(expected => document.querySelector('#story-illustration').dataset.scene === expected, `p4-${theme}-${stateKey}`);
+    await scenario.page.waitForFunction(expected => {
+      const image = document.querySelector('#story-illustration');
+      return image.classList.contains('is-loaded') && image.dataset.scene === expected && image.dataset.asset === expected && getComputedStyle(image).opacity === '1';
+    }, `p4-${theme}-${stateKey}`);
     assert.equal(await scenario.page.locator('#story-illustration').getAttribute('data-scene'), `p4-${theme}-${stateKey}`, `${locale}/${theme} selects its state illustration`);
     if (locale === 'zh') await scenario.page.screenshot({ path: path.join(screenshotDir, `task-20-${theme}-page-4-390.png`), fullPage: true });
     await scenario.page.locator('[data-page="4"]').click();

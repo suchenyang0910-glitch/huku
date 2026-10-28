@@ -320,7 +320,7 @@ try {
   assert.ok(overviewBefore.body.users.some((user) => user.id === userId), 'saved user appears in overview before deletion');
   assert.equal(overviewBefore.body.users.find((user) => user.id === userId).hasProfile, true,
     'admin list reports whether a user has a profile');
-  assert.equal(overviewBefore.body.metrics.themeCounts.career, 1, 'admin overview counts saved stories by theme');
+  assert.equal(overviewBefore.body.metrics.themeCounts.career, 1, 'admin overview counts saved profiles by theme');
   assert.equal(overviewBefore.body.pagination.page, 1, 'admin user list is paginated');
   const ownerProfile = await request(`/api/admin/users/${userId}/profile`, { cookie: adminCookie });
   assert.equal(ownerProfile.status, 200, 'owner can read a profile');
