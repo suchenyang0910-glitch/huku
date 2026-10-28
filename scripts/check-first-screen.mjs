@@ -13,7 +13,7 @@ try {
 
 const root = path.resolve(import.meta.dirname, '..');
 const screenshotDir = path.join(root, 'docs', 'screenshots');
-const contentTypes = { '.html': 'text/html; charset=utf-8', '.webp': 'image/webp', '.png': 'image/png', '.svg': 'image/svg+xml' };
+const contentTypes = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.webp': 'image/webp', '.png': 'image/png', '.svg': 'image/svg+xml' };
 const server = createServer(async (request, response) => {
   try {
     const pathname = new URL(request.url, 'http://mini.localhost').pathname;
@@ -59,7 +59,7 @@ async function openScenario({ locale = 'en', state = 'verified-unsaved', viewpor
     window.__hakuTest = { authCalls: 0, consentCalls: 0, profilePuts: 0, profileDeletes: 0, profileFails, haptics: 0, main, back };
     if (!localStorage.getItem('__hakuFakeInitialized')) {
       localStorage.setItem('__hakuFakeInitialized', '1');
-      if (state === 'saved' || state === 'old-v3') localStorage.setItem('__hakuFakeAccount', JSON.stringify({ telegram_id: '42', locale, consent_version: state === 'old-v3' ? '2026-10-28-v3-start-reading' : '2026-10-28-v4-reading-profile' }));
+      if (state === 'saved' || state === 'old-v4') localStorage.setItem('__hakuFakeAccount', JSON.stringify({ telegram_id: '42', locale, consent_version: state === 'old-v4' ? '2026-10-28-v4-reading-profile' : '2026-10-28-v5-ziwei-gender' }));
     }
     if (telegram) window.Telegram = { WebApp: {
         initData: 'signed-test-data',
@@ -82,11 +82,11 @@ async function openScenario({ locale = 'en', state = 'verified-unsaved', viewpor
         const account = localStorage.getItem('__hakuFakeAccount');
         const profile = localStorage.getItem('__hakuFakeProfile');
         const saved = account ? JSON.parse(account) : null;
-        return new Response(saved ? JSON.stringify({ ...saved, consent_current: saved.consent_version === '2026-10-28-v4-reading-profile', profile: profile ? JSON.parse(profile) : null }) : '{}', { status: saved ? 200 : 404, headers: { 'Content-Type': 'application/json' } });
+        return new Response(saved ? JSON.stringify({ ...saved, consent_current: saved.consent_version === '2026-10-28-v5-ziwei-gender', profile: profile ? JSON.parse(profile) : null }) : '{}', { status: saved ? 200 : 404, headers: { 'Content-Type': 'application/json' } });
       }
       if (url.endsWith('/api/telegram/consent')) {
         window.__hakuTest.consentCalls++;
-        if (!consentFails) localStorage.setItem('__hakuFakeAccount', JSON.stringify({ telegram_id: '42', locale, consent_version: '2026-10-28-v4-reading-profile' }));
+        if (!consentFails) localStorage.setItem('__hakuFakeAccount', JSON.stringify({ telegram_id: '42', locale, consent_version: '2026-10-28-v5-ziwei-gender' }));
         return new Response(consentFails ? '{}' : JSON.stringify({ saved: true, consent_current: true }), { status: consentFails ? 500 : 200, headers: { 'Content-Type': 'application/json' } });
       }
       if (url.endsWith('/api/telegram/profile')) {
@@ -122,7 +122,7 @@ async function openScenario({ locale = 'en', state = 'verified-unsaved', viewpor
   return { context, page, errors };
 }
 
-async function completeReading(page) {
+async function completeReading(page, { gender = 'male', unknownTime = false } = {}) {
   await page.click('#start-reading');
   await page.click('#answer-date');
   await page.locator('#date-month-5').click();
@@ -130,8 +130,13 @@ async function completeReading(page) {
   await page.click('#wheel-confirm');
   await page.selectOption('#answer-place', 'cn');
   await page.click('#question-next');
-  await page.click('#answer-time');
-  await page.click('#wheel-confirm');
+  if (unknownTime) await page.check('#unknown-time');
+  else {
+    await page.click('#answer-time');
+    await page.click('#wheel-confirm');
+  }
+  await page.click('#question-next');
+  await page.locator(`[name="answer-gender"][value="${gender}"]`).check();
   await page.click('#question-next');
   for (const name of ['relationship', 'concern', 'duration']) {
     await page.locator(`[name="answer-${name}"]`).first().check();
@@ -380,24 +385,131 @@ try {
   assert.deepEqual(profileScenario.errors, []);
   await profileScenario.context.close();
 
-  const oldConsent = await openScenario({ locale: 'zh', state: 'old-v3', viewport: { width: 390, height: 750 } });
-  assert.equal(await oldConsent.page.locator('#consent-panel').isVisible(), true, 'v3 user sees renewed consent on home');
+  const ziweiScenario = await openScenario({ locale: 'zh', state: 'saved', viewport: { width: 390, height: 750 } });
+  assert.equal(await ziweiScenario.page.evaluate(() => performance.getEntriesByType('resource').some(entry => entry.name.includes('iztro-2.6.3.min.js'))), false, 'home does not request iztro');
+  await completeReading(ziweiScenario.page, { gender: 'male' });
+  await ziweiScenario.page.waitForFunction(() => !document.querySelector('#manga-screen').hidden && window.iztro?.astro);
+  await ziweiScenario.page.click('#manga-next');
+  await ziweiScenario.page.waitForFunction(() => document.querySelector('#comic-subline').textContent.includes('命宫'));
+  assert.match(await ziweiScenario.page.locator('#comic-subline').textContent(), /命宫/, 'story includes a Life Palace theme');
+  await ziweiScenario.page.click('#manga-next');
+  await ziweiScenario.page.click('#manga-next');
+  assert.match(await ziweiScenario.page.locator('#comic-subline').textContent(), /夫妻宫/, 'relationship page includes a Relationship Palace theme');
+  await ziweiScenario.page.click('#manga-next');
+  await ziweiScenario.page.click('#manga-next');
+  await ziweiScenario.page.locator('#story-ziwei').scrollIntoViewIfNeeded();
+  assert.equal(await ziweiScenario.page.locator('#story-ziwei').isVisible(), true, 'final story page offers the Zi Wei chart');
+  await ziweiScenario.page.screenshot({ path: path.join(screenshotDir, 'task-18-story-ziwei-entry.png') });
+  await ziweiScenario.page.click('#story-ziwei');
+  await ziweiScenario.page.waitForFunction(() => !document.querySelector('#ziwei-content').hidden);
+  assert.equal(await ziweiScenario.page.locator('#ziwei-board .ziwei-palace').count(), 12, 'Zi Wei chart renders all twelve palaces');
+  assert.equal(await ziweiScenario.page.locator('.ziwei-center').count(), 1, 'Zi Wei chart has one central summary');
+  assert.equal(await ziweiScenario.page.locator('.ziwei-palace.is-current').count(), 1, 'disclosed gender highlights exactly one current decade cycle');
+  assert.equal(await ziweiScenario.page.locator('#ziwei-list').isVisible(), true, '390px defaults to the readable list view');
+  const minimumZiweiFont = await ziweiScenario.page.evaluate(() => Math.min(...[...document.querySelectorAll('#ziwei-content *')].filter((node) => {
+    const style = getComputedStyle(node);
+    return node.textContent.trim() && style.display !== 'none' && style.visibility !== 'hidden' && node.getClientRects().length;
+  }).map((node) => parseFloat(getComputedStyle(node).fontSize))));
+  assert.ok(minimumZiweiFont >= 11, `all visible Zi Wei text at 390px is at least 11px (found ${minimumZiweiFont}px)`);
+  assert.ok(await ziweiScenario.page.evaluate(() => document.documentElement.scrollWidth <= 390), 'Zi Wei chart has no page-level horizontal overflow at 390px');
+  await ziweiScenario.page.screenshot({ path: path.join(screenshotDir, 'task-18-ziwei-chart-390.png'), fullPage: true });
+  await ziweiScenario.page.locator('#ziwei-list [data-ziwei-palace]').first().click();
+  assert.equal(await ziweiScenario.page.locator('#ziwei-detail').isVisible(), true, 'a list palace opens its complete details');
+  assert.match(await ziweiScenario.page.locator('#ziwei-detail').textContent(), /大限/, 'palace details include the decade range');
+  assert.ok(await ziweiScenario.page.locator('#ziwei-detail *').evaluateAll((nodes) => Math.min(...nodes.filter((node) => node.textContent.trim() && node.getClientRects().length).map((node) => parseFloat(getComputedStyle(node).fontSize)))) >= 11, 'expanded palace details keep every visible label at least 11px');
+  await ziweiScenario.page.click('[data-ziwei-mode="grid"]');
+  assert.equal(await ziweiScenario.page.locator('#ziwei-board-scroll').isVisible(), true, 'grid remains available on narrow screens');
+  assert.equal(await ziweiScenario.page.evaluate(() => document.querySelector('#ziwei-board-scroll').scrollWidth > document.querySelector('#ziwei-board-scroll').clientWidth), true, 'the narrow grid scrolls inside its chart container');
+  const minimumGridFont = await ziweiScenario.page.evaluate(() => Math.min(...[...document.querySelectorAll('#ziwei-content *')].filter((node) => {
+    const style = getComputedStyle(node);
+    return node.textContent.trim() && style.display !== 'none' && style.visibility !== 'hidden' && node.getClientRects().length;
+  }).map((node) => parseFloat(getComputedStyle(node).fontSize))));
+  assert.ok(minimumGridFont >= 11, `all visible grid text at 390px is at least 11px (found ${minimumGridFont}px)`);
+  assert.ok(await ziweiScenario.page.locator('#ziwei-board .ziwei-palace strong').first().evaluate((node) => parseFloat(getComputedStyle(node).fontSize)) >= 12, 'palace names remain at least 12px');
+  assert.ok(await ziweiScenario.page.evaluate(() => document.documentElement.scrollWidth <= 390), 'the scrollable grid does not widen the page');
+  await ziweiScenario.page.screenshot({ path: path.join(screenshotDir, 'task-18-ziwei-grid-390.png'), fullPage: true });
+  await ziweiScenario.page.evaluate(() => window.__hakuTest.back.click());
+  await ziweiScenario.page.waitForFunction(() => !document.querySelector('#manga-screen').hidden && document.querySelector('#ziwei-view').hidden);
+  assert.deepEqual(ziweiScenario.errors, []);
+  await ziweiScenario.context.close();
+
+  const unknownZiwei = await openScenario({ locale: 'zh', state: 'saved', viewport: { width: 390, height: 750 } });
+  await completeReading(unknownZiwei.page, { gender: 'male', unknownTime: true });
+  await unknownZiwei.page.waitForFunction(() => !document.querySelector('#manga-screen').hidden);
+  await unknownZiwei.page.locator('[data-page="5"]').click();
+  await unknownZiwei.page.click('#story-ziwei');
+  await unknownZiwei.page.waitForFunction(() => !document.querySelector('#ziwei-view').hidden);
+  assert.equal(await unknownZiwei.page.locator('#ziwei-board .ziwei-palace').count(), 0, 'unknown birth time does not render a chart');
+  assert.match(await unknownZiwei.page.locator('#ziwei-status').textContent(), /需要出生时间/);
+  assert.deepEqual(unknownZiwei.errors, []);
+  await unknownZiwei.context.close();
+
+  const undisclosedZiwei = await openScenario({ locale: 'vi', state: 'saved', viewport: { width: 390, height: 750 }, colorScheme: 'dark' });
+  await completeReading(undisclosedZiwei.page, { gender: 'undisclosed' });
+  await undisclosedZiwei.page.waitForFunction(() => !document.querySelector('#manga-screen').hidden && window.iztro?.astro);
+  await undisclosedZiwei.page.locator('[data-page="5"]').click();
+  await undisclosedZiwei.page.click('#story-ziwei');
+  await undisclosedZiwei.page.waitForFunction(() => !document.querySelector('#ziwei-content').hidden);
+  assert.equal(await undisclosedZiwei.page.locator('.ziwei-decadal').count(), 0, 'undisclosed gender hides decade cycles');
+  assert.equal(await undisclosedZiwei.page.locator('.ziwei-palace.is-current').count(), 0, 'undisclosed gender does not highlight a decade cycle');
+  assert.match(await undisclosedZiwei.page.locator('#ziwei-footnote').textContent(), /Đại hạn được ẩn/);
+  assert.equal(await undisclosedZiwei.page.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0, 'dark Zi Wei chart has no horizontal overflow');
+  await undisclosedZiwei.page.screenshot({ path: path.join(screenshotDir, 'task-18-ziwei-undisclosed-dark.png'), fullPage: true });
+  assert.deepEqual(undisclosedZiwei.errors, []);
+  await undisclosedZiwei.context.close();
+
+  for (const locale of ['en', 'vi', 'km', 'th']) {
+    const localized = await openScenario({ locale, state: 'saved', viewport: { width: 390, height: 750 } });
+    await completeReading(localized.page, { gender: 'male' });
+    await localized.page.waitForFunction(() => !document.querySelector('#manga-screen').hidden && window.iztro?.astro);
+    await localized.page.click('#manga-next');
+    await localized.page.waitForFunction(() => document.querySelector('#comic-subline').textContent.trim().length > 0);
+    const storyText = await localized.page.locator('#comic-subline .story-copy').last().textContent();
+    await localized.page.locator('[data-page="5"]').click();
+    await localized.page.click('#story-ziwei');
+    await localized.page.waitForFunction(() => !document.querySelector('#ziwei-content').hidden);
+    const chartText = await localized.page.locator('#ziwei-content').textContent();
+    if (['km', 'th'].includes(locale)) {
+      const palaceLabels = await localized.page.locator('#ziwei-list strong').allTextContents();
+      assert.equal(palaceLabels.filter((label) => /\([^)]*[\u3400-\u9fff]+\)/.test(label)).length, 12, `${locale} shows all twelve local palace names with parenthesized Chinese originals`);
+    }
+    const visibleChinese = `${storyText} ${chartText}`.replace(/\([^)]*[\u3400-\u9fff][^)]*\)/g, '');
+    assert.doesNotMatch(visibleChinese, /[\u3400-\u9fff]/, `${locale} story and chart do not leak untranslated Chinese outside parenthesized originals`);
+    if (locale === 'en') {
+      assert.match(storyText, /^Your Life Palace centers on Tian Liang \(Protector\):/, 'English story uses the Haku star name in a natural sentence');
+      assert.equal(await localized.page.locator('#ziwei-list strong').first().textContent(), 'Life', 'accessible palace list begins with the Life Palace');
+      assert.match(chartText, /Ding Hai/, 'English stems and branches use pinyin');
+      assert.match(chartText, /Tian Liang \(Protector\)/, 'English chart uses Haku pinyin star names');
+      assert.match(chartText, /Earth fifth class/, 'English chart uses Haku five-elements class names');
+      assert.match(chartText, /(?:Brilliant|Strong|Gained|Favorable|Neutral|Weak|Fallen)/, 'English chart uses word-based brightness labels');
+      assert.match(chartText, /Lu \(Prosperity\)|Quan \(Power\)|Ke \(Recognition\)|Ji \(Challenge\)/, 'English chart uses named annual transformations');
+      assert.doesNotMatch(chartText, /\[[+-]\d\]|\bwoo\b/, 'English chart does not expose iztro symbolic brightness or romanization');
+      await localized.page.screenshot({ path: path.join(screenshotDir, 'task-18-ziwei-en-list-390.png'), fullPage: true });
+      await localized.page.click('[data-ziwei-mode="grid"]');
+      await localized.page.screenshot({ path: path.join(screenshotDir, 'task-18-ziwei-en-grid-390.png'), fullPage: true });
+    }
+    assert.deepEqual(localized.errors, []);
+    await localized.context.close();
+  }
+
+  const oldConsent = await openScenario({ locale: 'zh', state: 'old-v4', viewport: { width: 390, height: 750 } });
+  assert.equal(await oldConsent.page.locator('#consent-panel').isVisible(), true, 'v4 user sees renewed consent on home');
   assert.equal(await oldConsent.page.locator('#consent').isChecked(), true, 'renewed consent is selected by default');
   await oldConsent.page.screenshot({ path: path.join(screenshotDir, 'task-17-renew-consent.png') });
   await oldConsent.page.click('#user-entry');
   await oldConsent.page.waitForFunction(() => !document.querySelector('#me-view').hidden);
-  assert.equal(await oldConsent.page.locator('#me-consent-panel').isVisible(), true, 'v3 user sees renewed consent in My account');
+  assert.equal(await oldConsent.page.locator('#me-consent-panel').isVisible(), true, 'v4 user sees renewed consent in My account');
   assert.equal(await oldConsent.page.locator('#me-consent').isChecked(), true, 'My account renewed consent is selected by default');
   await oldConsent.page.click('#me-back');
   await oldConsent.page.waitForFunction(() => !document.querySelector('#mini-view').hidden);
   await oldConsent.page.uncheck('#consent');
   await oldConsent.page.click('#start-reading');
   assert.equal(await oldConsent.page.evaluate(() => window.__hakuTest.consentCalls), 0, 'clearing renewed consent does not submit consent');
-  assert.equal(await oldConsent.page.evaluate(() => window.__hakuTest.profilePuts), 0, 'v3 user without renewed consent does not save a profile');
+  assert.equal(await oldConsent.page.evaluate(() => window.__hakuTest.profilePuts), 0, 'v4 user without renewed consent does not save a profile');
   assert.deepEqual(oldConsent.errors, []);
   await oldConsent.context.close();
 
-  console.log('check-first-screen.mjs: layout, Telegram controls, shared wheels, reading profile persistence, and screenshots pass.');
+  console.log('check-first-screen.mjs: layout, Telegram controls, shared wheels, reading profiles, lazy Zi Wei, chart routing, and screenshots pass.');
 } finally {
   await browser.close();
   await new Promise(resolve => server.close(resolve));

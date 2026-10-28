@@ -56,11 +56,27 @@ try {
     ) STRICT;
     CREATE INDEX users_first_seen_idx ON users(first_seen DESC);
     CREATE INDEX users_last_seen_idx ON users(last_seen DESC);
+    CREATE TABLE reading_profiles (
+      telegram_id TEXT PRIMARY KEY REFERENCES users(telegram_id),
+      birth_date TEXT NOT NULL,
+      birth_time TEXT,
+      unknown_time INTEGER NOT NULL,
+      term_side TEXT NOT NULL,
+      place TEXT NOT NULL,
+      relationship INTEGER NOT NULL,
+      concern INTEGER NOT NULL,
+      duration INTEGER NOT NULL,
+      updated_at TEXT NOT NULL
+    ) STRICT;
   `);
   const insert = legacy.prepare('INSERT INTO users VALUES (?, ?, ?, ?, ?, ?, ?)');
   for (const [index, locale] of ['en', 'km', 'th', 'zh'].entries()) {
     insert.run(String(910000000 + index), locale, 'legacy-bot', timestamp, timestamp, timestamp, 'legacy-v1');
   }
+  legacy.prepare(`INSERT INTO reading_profiles
+    (telegram_id, birth_date, birth_time, unknown_time, term_side, place, relationship, concern, duration, updated_at)
+    VALUES ('910000000', '1990-05-15', '12:00', 0, '', 'cn', 1, 2, 3, ?)`)
+    .run(timestamp);
   legacy.close();
 
   const port = await freePort();
@@ -117,6 +133,10 @@ try {
   assert.match(firstTable.sql, /['"]vi['"]/, 'migrated CHECK constraint includes vi');
   assert.throws(() => afterFirst.prepare('UPDATE users SET locale = ? WHERE telegram_id = ?').run('fr', '910000000'), /CHECK constraint failed/, 'unknown locales remain rejected');
   assert.match(firstProfileTable.sql, /STRICT/i, 'reading_profiles is created as a STRICT table');
+  assert.match(firstProfileTable.sql, /gender\s+TEXT/i, 'reading_profiles migration adds gender');
+  assert.match(firstProfileTable.sql, /male.*female.*undisclosed/i, 'reading_profiles migration constrains gender values');
+  assert.equal(afterFirst.prepare("SELECT gender FROM reading_profiles WHERE telegram_id = '910000000'").get().gender, null,
+    'legacy reading profiles keep their data and receive a null gender');
   afterFirst.prepare(`INSERT INTO reading_profiles
     (telegram_id, birth_date, birth_time, unknown_time, term_side, place, relationship, concern, duration, updated_at)
     VALUES ('920000000', '1990-05-15', '12:00', 0, '', 'vn', 1, 2, 3, ?)`)

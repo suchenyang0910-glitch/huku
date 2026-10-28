@@ -78,7 +78,13 @@ try {
   assert.equal(logo.headers['cache-control'], 'public, max-age=604800');
   assert.ok(logo.body.length > 0);
 
-  for (const path of ['/assets/../server.mjs', '/assets/logo-96.svg', '/assets/LOGO.webp', '/assets/logo_96.webp']) {
+  const iztro = await request('/assets/vendor/iztro-2.6.3.min.js');
+  assert.equal(iztro.status, 200, 'the pinned iztro browser bundle is served');
+  assert.equal(iztro.headers['content-type'], 'text/javascript; charset=utf-8');
+  assert.equal(iztro.headers['cache-control'], 'public, max-age=31536000, immutable');
+  assert.ok(iztro.body.length > 400000);
+
+  for (const path of ['/assets/../server.mjs', '/assets/vendor/other.js', '/assets/iztro-2.6.3.min.js', '/assets/logo-96.svg', '/assets/LOGO.webp', '/assets/logo_96.webp']) {
     assert.equal((await request(path)).status, 404, `${path} is rejected`);
   }
   assert.equal((await request('/api/health', { method: 'HEAD' })).status, 200, 'HEAD health check succeeds');
