@@ -135,8 +135,12 @@ try {
   assert.match(firstProfileTable.sql, /STRICT/i, 'reading_profiles is created as a STRICT table');
   assert.match(firstProfileTable.sql, /gender\s+TEXT/i, 'reading_profiles migration adds gender');
   assert.match(firstProfileTable.sql, /male.*female.*undisclosed/i, 'reading_profiles migration constrains gender values');
-  assert.equal(afterFirst.prepare("SELECT gender FROM reading_profiles WHERE telegram_id = '910000000'").get().gender, null,
-    'legacy reading profiles keep their data and receive a null gender');
+  assert.match(firstProfileTable.sql, /theme\s+TEXT/i, 'reading_profiles migration adds theme');
+  assert.match(firstProfileTable.sql, /love.*wealth.*career.*social/i, 'reading_profiles migration constrains theme values');
+  assert.deepEqual({ ...afterFirst.prepare("SELECT gender, theme FROM reading_profiles WHERE telegram_id = '910000000'").get() },
+    { gender: null, theme: 'love' }, 'legacy reading profiles keep their data and receive gender/theme defaults');
+  assert.throws(() => afterFirst.prepare("UPDATE reading_profiles SET theme = 'health' WHERE telegram_id = '910000000'").run(), /CHECK constraint failed/,
+    'unknown themes remain rejected');
   afterFirst.prepare(`INSERT INTO reading_profiles
     (telegram_id, birth_date, birth_time, unknown_time, term_side, place, relationship, concern, duration, updated_at)
     VALUES ('920000000', '1990-05-15', '12:00', 0, '', 'vn', 1, 2, 3, ?)`)
@@ -157,7 +161,7 @@ try {
     'second startup preserves reading profile data');
   afterSecond.close();
 
-  console.log('migration.test.mjs: legacy data preserved, five locales accepted, migration is idempotent.');
+  console.log('migration.test.mjs: legacy data preserved with love theme, five locales accepted, migration is idempotent.');
 } finally {
   if (child && child.exitCode === null) await new Promise((done) => { child.once('exit', done); child.kill('SIGTERM'); });
   if (tempDir) {

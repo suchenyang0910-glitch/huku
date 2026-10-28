@@ -80,6 +80,7 @@ function ensureReadingProfilesSchema(database) {
     term_side TEXT NOT NULL CHECK (term_side IN ('', 'before', 'after', 'unknown')),
     place TEXT NOT NULL CHECK (place IN ('kh', 'th', 'vn', 'cn', 'sg', 'my')),
     gender TEXT CHECK (gender IS NULL OR gender IN ('male', 'female', 'undisclosed')),
+    theme TEXT NOT NULL DEFAULT 'love' CHECK (theme IN ('love', 'wealth', 'career', 'social')),
     relationship INTEGER NOT NULL CHECK (relationship BETWEEN 0 AND 3),
     concern INTEGER NOT NULL CHECK (concern BETWEEN 0 AND 3),
     duration INTEGER NOT NULL CHECK (duration BETWEEN 0 AND 3),
@@ -88,18 +89,22 @@ function ensureReadingProfilesSchema(database) {
   `;
   try {
     if (!existing) database.exec(`BEGIN IMMEDIATE; CREATE TABLE reading_profiles (${columns}) STRICT; COMMIT;`);
-    else if (!/\bgender\b/i.test(existing.sql || '')) database.exec(`
+    else if (!/\bgender\b/i.test(existing.sql || '') || !/\btheme\b/i.test(existing.sql || '') || !/wealth.*career.*social/i.test(existing.sql || '')) {
+      const hasGender = /\bgender\b/i.test(existing.sql || '');
+      const hasTheme = /\btheme\b/i.test(existing.sql || '');
+      database.exec(`
         BEGIN IMMEDIATE;
-        DROP TABLE IF EXISTS reading_profiles_gender_migration;
-        CREATE TABLE reading_profiles_gender_migration (${columns}) STRICT;
-        INSERT INTO reading_profiles_gender_migration
-          (telegram_id, birth_date, birth_time, unknown_time, term_side, place, gender, relationship, concern, duration, updated_at)
-          SELECT telegram_id, birth_date, birth_time, unknown_time, term_side, place, NULL, relationship, concern, duration, updated_at
+        DROP TABLE IF EXISTS reading_profiles_theme_migration;
+        CREATE TABLE reading_profiles_theme_migration (${columns}) STRICT;
+        INSERT INTO reading_profiles_theme_migration
+          (telegram_id, birth_date, birth_time, unknown_time, term_side, place, gender, theme, relationship, concern, duration, updated_at)
+          SELECT telegram_id, birth_date, birth_time, unknown_time, term_side, place, ${hasGender ? 'gender' : 'NULL'}, ${hasTheme ? 'theme' : "'love'"}, relationship, concern, duration, updated_at
           FROM reading_profiles;
         DROP TABLE reading_profiles;
-        ALTER TABLE reading_profiles_gender_migration RENAME TO reading_profiles;
+        ALTER TABLE reading_profiles_theme_migration RENAME TO reading_profiles;
         COMMIT;
       `);
+    }
   } catch (error) {
     try { database.exec('ROLLBACK;'); } catch {}
     throw error;
@@ -440,8 +445,8 @@ function profilePayload(row) {
 }
 
 function validateReadingProfile(body) {
-  const fields = ['birth_date', 'birth_time', 'unknown_time', 'term_side', 'place', 'gender', 'relationship', 'concern', 'duration'];
-  const required = fields.filter((field) => field !== 'gender');
+  const fields = ['birth_date', 'birth_time', 'unknown_time', 'term_side', 'place', 'gender', 'theme', 'relationship', 'concern', 'duration'];
+  const required = fields.filter((field) => !['gender', 'theme'].includes(field));
   if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some((key) => !fields.includes(key)) || required.some((key) => !Object.hasOwn(body, key))) {
     throw Object.assign(new Error('profile_invalid'), { status: 400 });
   }
@@ -462,10 +467,12 @@ function validateReadingProfile(body) {
   if (!['', 'before', 'after', 'unknown'].includes(body.term_side)) throw Object.assign(new Error('term_side_invalid'), { status: 400 });
   const gender = Object.hasOwn(body, 'gender') ? body.gender : null;
   if (gender !== null && !['male', 'female', 'undisclosed'].includes(gender)) throw Object.assign(new Error('gender_invalid'), { status: 400 });
+  const theme = Object.hasOwn(body, 'theme') ? body.theme : 'love';
+  if (!['love', 'wealth', 'career', 'social'].includes(theme)) throw Object.assign(new Error('theme_invalid'), { status: 400 });
   for (const field of ['relationship', 'concern', 'duration']) {
     if (!Number.isInteger(body[field]) || body[field] < 0 || body[field] > 3) throw Object.assign(new Error(`${field}_invalid`), { status: 400 });
   }
-  return { ...body, gender };
+  return { ...body, gender, theme };
 }
 
 function clientIp(req) {
@@ -615,6 +622,8 @@ function overview(page = 1, pageSize = 50) {
   const newUsers7d = recentUsers.length;
   const consentedUsers = Number(db.prepare('SELECT COUNT(*) AS n FROM users WHERE consent_at IS NOT NULL').get().n);
   const consentRate = totalUsers ? Math.round(consentedUsers / totalUsers * 100) : 0;
+  const themeCounts = Object.fromEntries(['love', 'wealth', 'career', 'social'].map((theme) => [theme, 0]));
+  for (const row of db.prepare('SELECT theme, COUNT(*) AS n FROM reading_profiles GROUP BY theme').all()) themeCounts[row.theme] = Number(row.n);
   const daily = new Map(dailyDates.map((date) => [date, 0]));
   for (const row of recentUsers) {
     const date = statsDateKey(new Date(row.first_seen));
@@ -635,7 +644,7 @@ function overview(page = 1, pageSize = 50) {
     hasProfile: Boolean(row.has_profile)
   }));
   return {
-    metrics: { totalUsers, newUsers7d, consentRate },
+    metrics: { totalUsers, newUsers7d, consentRate, themeCounts },
     dailyNewUsers,
     dailyDates,
     users,
@@ -776,14 +785,14 @@ const server = createServer(async (req, res) => {
       const profile = validateReadingProfile(await readJson(req, 4096));
       const updatedAt = new Date().toISOString();
       db.prepare(`INSERT INTO reading_profiles
-        (telegram_id, birth_date, birth_time, unknown_time, term_side, place, gender, relationship, concern, duration, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (telegram_id, birth_date, birth_time, unknown_time, term_side, place, gender, theme, relationship, concern, duration, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(telegram_id) DO UPDATE SET birth_date=excluded.birth_date, birth_time=excluded.birth_time,
           unknown_time=excluded.unknown_time, term_side=excluded.term_side, place=excluded.place,
-          gender=excluded.gender, relationship=excluded.relationship, concern=excluded.concern,
+          gender=excluded.gender, theme=excluded.theme, relationship=excluded.relationship, concern=excluded.concern,
           duration=excluded.duration, updated_at=excluded.updated_at`)
         .run(session.telegramId, profile.birth_date, profile.birth_time, Number(profile.unknown_time), profile.term_side,
-          profile.place, profile.gender, profile.relationship, profile.concern, profile.duration, updatedAt);
+          profile.place, profile.gender, profile.theme, profile.relationship, profile.concern, profile.duration, updatedAt);
       return json(res, 200, profilePayload(db.prepare('SELECT * FROM reading_profiles WHERE telegram_id = ?').get(session.telegramId)));
     }
 

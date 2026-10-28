@@ -70,9 +70,17 @@ const extractFunction = (name, nextName, context = {}) => {
   return vm.runInNewContext(`(${html.slice(start, end).trim()})`, context);
 };
 const ELEMENTS = ['wood', 'fire', 'earth', 'metal', 'water'];
-const loveStateScenes = ['hoping', 'together', 'complicated', 'healing'];
-const loveConcernScenes = ['clarity', 'letting-go', 'uncertainty', 'trust'];
-const storyIllustrationId = extractFunction('storyIllustrationId', 'storyIllustrationCandidates', { ELEMENTS, loveStateScenes, loveConcernScenes });
+const THEME_KEYS = ['love', 'wealth', 'career', 'social'];
+const sceneKeys = {
+  love: { state: ['hoping', 'together', 'complicated', 'healing'], concern: ['clarity', 'letting-go', 'uncertainty', 'trust'] },
+  wealth: { state: ['steady', 'tight', 'changing', 'planning'], concern: ['not-enough', 'risk', 'spending', 'security'] },
+  career: { state: ['searching', 'weary', 'crossroads', 'pushing'], concern: ['unseen', 'wrong-choice', 'burnout', 'self-doubt'] },
+  social: { state: ['new-friends', 'steady-circle', 'friction', 'lonely'], concern: ['speak-up', 'misunderstood', 'accommodating', 'let-go'] }
+};
+const READING_THEMES = { en: Object.fromEntries(THEME_KEYS.map(theme => [theme, {
+  state: sceneKeys[theme].state.map(key => [key]), concern: sceneKeys[theme].concern.map(key => [key])
+}])) };
+const storyIllustrationId = extractFunction('storyIllustrationId', 'storyIllustrationCandidates', { ELEMENTS, THEME_KEYS, READING_THEMES });
 const storyIllustrationCandidates = extractFunction('storyIllustrationCandidates', 'storyIllustrationSources');
 const facts = { dayElement: 'metal', strongestStable: true, strongest: ['fire'], weeklyElement: 'wood' };
 assert.equal(storyIllustrationId(0, facts, { date: '1990-05-15' }), 'p1-opening-a');
@@ -81,10 +89,12 @@ for (const element of ELEMENTS) assert.equal(storyIllustrationId(1, { ...facts, 
 for (const element of ELEMENTS) assert.equal(storyIllustrationId(2, { ...facts, strongest: [element] }, {}), `p3-strongest-${element}`);
 assert.equal(storyIllustrationId(2, { ...facts, strongest: ['fire', 'metal'] }, {}), 'p3-balanced');
 assert.equal(storyIllustrationId(2, { ...facts, strongestStable: false, strongest: [] }, {}), 'p3-balanced');
-for (const [index, key] of loveStateScenes.entries()) assert.equal(storyIllustrationId(3, facts, { relationship: index }), `p4-love-${key}`);
-for (const [index, key] of loveConcernScenes.entries()) assert.equal(storyIllustrationId(4, facts, { concern: index }), `p5-love-${key}`);
-assert.equal(storyIllustrationId(3, facts, { theme: 'wealth', themeState: 'steady' }), 'p4-wealth-steady', 'future themes have a stable interface');
-assert.equal(storyIllustrationId(4, facts, { theme: 'social', themeConcern: 'speak-up' }), 'p5-social-speak-up', 'future concerns have a stable interface');
+for (const theme of THEME_KEYS) for (const [index, key] of sceneKeys[theme].state.entries()) {
+  assert.equal(storyIllustrationId(3, facts, { theme, relationship: index }), `p4-${theme}-${key}`);
+}
+for (const theme of THEME_KEYS) for (const [index, key] of sceneKeys[theme].concern.entries()) {
+  assert.equal(storyIllustrationId(4, facts, { theme, concern: index }), `p5-${theme}-${key}`);
+}
 for (const element of ELEMENTS) assert.equal(storyIllustrationId(5, { ...facts, weeklyElement: element }, {}, element), `p6-action-${element}`);
 assert.match(html, /actionElement=facts\.weeklyElement/);
 assert.match(html, /weeklyActions\[actionElement\]/, 'page six copy and illustration use the same actionElement variable');

@@ -66,7 +66,7 @@ async function openScenario({ locale = 'en', state = 'verified-unsaved', viewpor
     window.__hakuTest = { authCalls: 0, consentCalls: 0, profilePuts: 0, profileDeletes: 0, profileFails, haptics: 0, main, back };
     if (!localStorage.getItem('__hakuFakeInitialized')) {
       localStorage.setItem('__hakuFakeInitialized', '1');
-      if (state === 'saved' || state === 'old-v4') localStorage.setItem('__hakuFakeAccount', JSON.stringify({ telegram_id: '42', locale, consent_version: state === 'old-v4' ? '2026-10-28-v4-reading-profile' : '2026-10-28-v5-ziwei-gender' }));
+      if (state === 'saved' || state === 'old-v5') localStorage.setItem('__hakuFakeAccount', JSON.stringify({ telegram_id: '42', locale, consent_version: state === 'old-v5' ? '2026-10-28-v5-ziwei-gender' : '2026-10-28-v6-reading-themes' }));
     }
     if (telegram) window.Telegram = { WebApp: {
         initData: 'signed-test-data',
@@ -89,11 +89,11 @@ async function openScenario({ locale = 'en', state = 'verified-unsaved', viewpor
         const account = localStorage.getItem('__hakuFakeAccount');
         const profile = localStorage.getItem('__hakuFakeProfile');
         const saved = account ? JSON.parse(account) : null;
-        return new Response(saved ? JSON.stringify({ ...saved, consent_current: saved.consent_version === '2026-10-28-v5-ziwei-gender', profile: profile ? JSON.parse(profile) : null }) : '{}', { status: saved ? 200 : 404, headers: { 'Content-Type': 'application/json' } });
+        return new Response(saved ? JSON.stringify({ ...saved, consent_current: saved.consent_version === '2026-10-28-v6-reading-themes', profile: profile ? JSON.parse(profile) : null }) : '{}', { status: saved ? 200 : 404, headers: { 'Content-Type': 'application/json' } });
       }
       if (url.endsWith('/api/telegram/consent')) {
         window.__hakuTest.consentCalls++;
-        if (!consentFails) localStorage.setItem('__hakuFakeAccount', JSON.stringify({ telegram_id: '42', locale, consent_version: '2026-10-28-v5-ziwei-gender' }));
+        if (!consentFails) localStorage.setItem('__hakuFakeAccount', JSON.stringify({ telegram_id: '42', locale, consent_version: '2026-10-28-v6-reading-themes' }));
         return new Response(consentFails ? '{}' : JSON.stringify({ saved: true, consent_current: true }), { status: consentFails ? 500 : 200, headers: { 'Content-Type': 'application/json' } });
       }
       if (url.endsWith('/api/telegram/profile')) {
@@ -129,8 +129,14 @@ async function openScenario({ locale = 'en', state = 'verified-unsaved', viewpor
   return { context, page, errors, storyRequests };
 }
 
-async function completeReading(page, { gender = 'male', unknownTime = false } = {}) {
+async function chooseTheme(page, theme = 'love') {
+  await page.locator(`[name="answer-theme"][value="${theme}"]`).check();
+  await page.click('#question-next');
+}
+
+async function completeReading(page, { gender = 'male', unknownTime = false, theme = 'love', state = 0, concern = 0 } = {}) {
   await page.click('#start-reading');
+  await chooseTheme(page, theme);
   await page.click('#answer-date');
   await page.locator('#date-month-5').click();
   await page.locator('#date-day-15').click();
@@ -145,8 +151,8 @@ async function completeReading(page, { gender = 'male', unknownTime = false } = 
   await page.click('#question-next');
   await page.locator(`[name="answer-gender"][value="${gender}"]`).check();
   await page.click('#question-next');
-  for (const name of ['relationship', 'concern', 'duration']) {
-    await page.locator(`[name="answer-${name}"]`).first().check();
+  for (const [name, value] of [['relationship', state], ['concern', concern], ['duration', 0]]) {
+    await page.locator(`[name="answer-${name}"][value="${value}"]`).check();
     await page.click('#question-next');
   }
   await page.waitForFunction(() => window.__hakuTest.profilePuts === 1);
@@ -217,6 +223,7 @@ try {
   await mkdir(screenshotDir, { recursive: true });
   const dateScenario = await openScenario({ locale: 'zh', state: 'saved', viewport: { width: 390, height: 750 } });
   await dateScenario.page.click('#start-reading');
+  await chooseTheme(dateScenario.page);
   await dateScenario.page.click('#answer-date');
   await dateScenario.page.waitForFunction(() => !document.querySelector('#wheel-dialog').hidden);
   const dialogBox = await dateScenario.page.locator('.wheel-picker-sheet').boundingBox();
@@ -283,6 +290,7 @@ try {
 
   const darkScenario = await openScenario({ locale: 'vi', state: 'saved', viewport: { width: 390, height: 750 }, colorScheme: 'dark' });
   await darkScenario.page.click('#start-reading');
+  await chooseTheme(darkScenario.page);
   await darkScenario.page.click('#answer-date');
   assert.equal(await darkScenario.page.evaluate(() => document.documentElement.classList.contains('telegram-dark')), true, 'date wheel follows Telegram dark mode');
   assert.equal(await darkScenario.page.locator('.wheel-picker-sheet').evaluate(element => getComputedStyle(element).backgroundColor), 'rgb(41, 58, 51)', 'date wheel uses the raised dark surface');
@@ -291,6 +299,7 @@ try {
 
   const timeScenario = await openScenario({ locale: 'zh', state: 'saved', viewport: { width: 390, height: 750 } });
   await timeScenario.page.click('#start-reading');
+  await chooseTheme(timeScenario.page);
   await timeScenario.page.click('#answer-date');
   await timeScenario.page.locator('#date-month-5').click();
   await timeScenario.page.locator('#date-day-15').click();
@@ -339,17 +348,20 @@ try {
   await timeScenario.page.uncheck('#unknown-time');
   assert.equal(await timeScenario.page.locator('#answer-time').isEnabled(), true, 'clearing unknown birth time re-enables the time trigger');
   await timeScenario.page.click('#question-next');
-  assert.equal(await timeScenario.page.locator('#step-label').textContent(), '03', 'confirmed time can continue to the next question');
+  assert.equal(await timeScenario.page.locator('#step-label').textContent(), '04', 'confirmed time can continue to the next question');
   assert.equal(await timeScenario.page.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0, 'time question does not scroll horizontally');
   assert.deepEqual(timeScenario.errors, []);
   await timeScenario.context.close();
 
   const profileScenario = await openScenario({ locale: 'zh', state: 'verified-unsaved', viewport: { width: 390, height: 750 } });
-  await completeReading(profileScenario.page);
+  await completeReading(profileScenario.page, { theme: 'career' });
   assert.equal(await profileScenario.page.evaluate(() => JSON.parse(localStorage.getItem('__hakuFakeProfile')).birth_date), '1990-05-15', 'completed questionnaire saves the profile');
+  assert.equal(await profileScenario.page.evaluate(() => JSON.parse(localStorage.getItem('__hakuFakeProfile')).theme), 'career', 'completed questionnaire saves the selected theme');
   await profileScenario.page.reload({ waitUntil: 'domcontentloaded' });
   await profileScenario.page.waitForFunction(() => window.__hakuTest.authCalls === 1 && !document.querySelector('#start-reading').disabled);
   await profileScenario.page.click('#start-reading');
+  assert.equal(await profileScenario.page.locator('[name="answer-theme"][value="career"]').isChecked(), true, 'refresh prefills the saved theme');
+  await profileScenario.page.click('#question-next');
   assert.match(await profileScenario.page.locator('#answer-date').textContent(), /1990.*5.*15/, 'refresh prefills the saved birth date');
   assert.equal(await profileScenario.page.locator('#answer-place').inputValue(), 'cn', 'refresh prefills the saved place');
   await profileScenario.page.click('#question-prev');
@@ -377,6 +389,7 @@ try {
   await profileScenario.page.waitForFunction(() => !document.querySelector('#mini-view').hidden);
   await profileScenario.page.click('#start-reading');
   await profileScenario.page.click('#question-next');
+  await profileScenario.page.click('#question-next');
   assert.equal(await profileScenario.page.locator('#answer-time').textContent(), '23:30', 'My account edit prefills the questionnaire with 23:30');
   await profileScenario.page.click('#question-prev');
   await profileScenario.page.click('#question-prev');
@@ -388,6 +401,7 @@ try {
   await profileScenario.page.click('#me-back');
   await profileScenario.page.waitForFunction(() => !document.querySelector('#mini-view').hidden);
   await profileScenario.page.click('#start-reading');
+  await chooseTheme(profileScenario.page);
   assert.match(await profileScenario.page.locator('#answer-date').textContent(), /选择出生日期/, 'profile deletion restores an empty questionnaire');
   assert.deepEqual(profileScenario.errors, []);
   await profileScenario.context.close();
@@ -425,6 +439,61 @@ try {
   await illustrated.page.screenshot({ path: path.join(screenshotDir, 'task-19-story-light-390.png'), fullPage: true });
   assert.deepEqual(illustrated.errors, []);
   await illustrated.context.close();
+
+  const themePicker = await openScenario({ locale: 'zh', state: 'saved', viewport: { width: 390, height: 750 } });
+  await themePicker.page.click('#start-reading');
+  assert.equal(await themePicker.page.locator('[name="answer-theme"]').count(), 4, 'theme step offers four choices');
+  assert.equal(await themePicker.page.locator('#step-total').textContent(), '/ 07', 'questionnaire shows seven steps');
+  await themePicker.page.screenshot({ path: path.join(screenshotDir, 'task-20-theme-picker-390.png'), fullPage: true });
+  assert.deepEqual(themePicker.errors, []);
+  await themePicker.context.close();
+
+  const themeSceneKeys = {
+    love: ['hoping', 'clarity'], wealth: ['steady', 'not-enough'],
+    career: ['searching', 'unseen'], social: ['new-friends', 'speak-up']
+  };
+  for (const locale of locales) for (const [theme, [stateKey, concernKey]] of Object.entries(themeSceneKeys)) {
+    const scenario = await openScenario({ locale, state: 'saved', viewport: { width: 390, height: 750 } });
+    await completeReading(scenario.page, { theme });
+    await scenario.page.waitForFunction(() => !document.querySelector('#manga-screen').hidden);
+    await scenario.page.locator('[data-page="3"]').click();
+    await scenario.page.waitForFunction(expected => document.querySelector('#story-illustration').dataset.scene === expected, `p4-${theme}-${stateKey}`);
+    assert.equal(await scenario.page.locator('#story-illustration').getAttribute('data-scene'), `p4-${theme}-${stateKey}`, `${locale}/${theme} selects its state illustration`);
+    if (locale === 'zh') await scenario.page.screenshot({ path: path.join(screenshotDir, `task-20-${theme}-page-4-390.png`), fullPage: true });
+    await scenario.page.locator('[data-page="4"]').click();
+    await scenario.page.waitForFunction(expected => document.querySelector('#story-illustration').dataset.scene === expected, `p5-${theme}-${concernKey}`);
+    assert.equal(await scenario.page.locator('#story-illustration').getAttribute('data-scene'), `p5-${theme}-${concernKey}`, `${locale}/${theme} selects its concern illustration`);
+    assert.equal(await scenario.page.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0, `${locale}/${theme} has no horizontal overflow`);
+    assert.deepEqual(scenario.errors, []);
+    await scenario.context.close();
+  }
+
+  const changedTheme = await openScenario({ locale: 'en', state: 'saved', viewport: { width: 390, height: 750 } });
+  await changedTheme.page.click('#start-reading');
+  await chooseTheme(changedTheme.page, 'love');
+  await changedTheme.page.click('#answer-date');
+  await changedTheme.page.click('#wheel-confirm');
+  await changedTheme.page.click('#question-next');
+  await changedTheme.page.click('#answer-time');
+  await changedTheme.page.click('#wheel-confirm');
+  await changedTheme.page.click('#question-next');
+  await changedTheme.page.locator('[name="answer-gender"][value="male"]').check();
+  await changedTheme.page.click('#question-next');
+  await changedTheme.page.locator('[name="answer-relationship"][value="1"]').check();
+  await changedTheme.page.click('#question-next');
+  await changedTheme.page.locator('[name="answer-concern"][value="2"]').check();
+  for (let index = 0; index < 5; index++) await changedTheme.page.click('#question-prev');
+  await changedTheme.page.locator('[name="answer-theme"][value="wealth"]').check();
+  await changedTheme.page.click('#question-next');
+  await changedTheme.page.click('#question-next');
+  await changedTheme.page.click('#question-next');
+  await changedTheme.page.click('#question-next');
+  assert.equal(await changedTheme.page.locator('[name="answer-relationship"]:checked').count(), 0, 'changing theme clears the previous state');
+  await changedTheme.page.locator('[name="answer-relationship"]').first().check();
+  await changedTheme.page.click('#question-next');
+  assert.equal(await changedTheme.page.locator('[name="answer-concern"]:checked').count(), 0, 'changing theme clears the previous concern');
+  assert.deepEqual(changedTheme.errors, []);
+  await changedTheme.context.close();
 
   const fallbackStory = await openScenario({ locale: 'zh', state: 'saved', viewport: { width: 390, height: 750 }, storyMode: 'fallback' });
   await completeReading(fallbackStory.page);
@@ -566,24 +635,24 @@ try {
     await localized.context.close();
   }
 
-  const oldConsent = await openScenario({ locale: 'zh', state: 'old-v4', viewport: { width: 390, height: 750 } });
-  assert.equal(await oldConsent.page.locator('#consent-panel').isVisible(), true, 'v4 user sees renewed consent on home');
+  const oldConsent = await openScenario({ locale: 'zh', state: 'old-v5', viewport: { width: 390, height: 750 } });
+  assert.equal(await oldConsent.page.locator('#consent-panel').isVisible(), true, 'v5 user sees renewed consent on home');
   assert.equal(await oldConsent.page.locator('#consent').isChecked(), true, 'renewed consent is selected by default');
   await oldConsent.page.screenshot({ path: path.join(screenshotDir, 'task-17-renew-consent.png') });
   await oldConsent.page.click('#user-entry');
   await oldConsent.page.waitForFunction(() => !document.querySelector('#me-view').hidden);
-  assert.equal(await oldConsent.page.locator('#me-consent-panel').isVisible(), true, 'v4 user sees renewed consent in My account');
+  assert.equal(await oldConsent.page.locator('#me-consent-panel').isVisible(), true, 'v5 user sees renewed consent in My account');
   assert.equal(await oldConsent.page.locator('#me-consent').isChecked(), true, 'My account renewed consent is selected by default');
   await oldConsent.page.click('#me-back');
   await oldConsent.page.waitForFunction(() => !document.querySelector('#mini-view').hidden);
   await oldConsent.page.uncheck('#consent');
   await oldConsent.page.click('#start-reading');
   assert.equal(await oldConsent.page.evaluate(() => window.__hakuTest.consentCalls), 0, 'clearing renewed consent does not submit consent');
-  assert.equal(await oldConsent.page.evaluate(() => window.__hakuTest.profilePuts), 0, 'v4 user without renewed consent does not save a profile');
+  assert.equal(await oldConsent.page.evaluate(() => window.__hakuTest.profilePuts), 0, 'v5 user without renewed consent does not save a profile');
   assert.deepEqual(oldConsent.errors, []);
   await oldConsent.context.close();
 
-  console.log('check-first-screen.mjs: layout, Telegram controls, shared wheels, reading profiles, lazy story art and fallback, Zi Wei, chart routing, and screenshots pass.');
+  console.log('check-first-screen.mjs: layout, Telegram controls, shared wheels, four localized reading themes, profiles, story art, Zi Wei, routing, and screenshots pass.');
 } finally {
   await browser.close();
   await new Promise(resolve => server.close(resolve));
