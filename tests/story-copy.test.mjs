@@ -43,6 +43,8 @@ assert.deepEqual(shape(en), shape(zh), 'English story keys match Chinese exactly
 const checkStrings = value => {
   if (typeof value === 'string') {
     assert.ok(value.trim(), 'story strings are non-empty');
+    assert.doesNotMatch(value, /\bundefined\b/, 'story template values are present');
+    assert.doesNotMatch(value, /\{(?!(?:duration|a|b|elements|action|heart)\})[^}]+\}/, 'story placeholders are recognized');
     for (const [, key] of value.matchAll(/\{([^}]+)\}/g)) assert.ok(['duration','a','b','elements','action','heart'].includes(key), `known render placeholder: ${key}`);
   } else if (Array.isArray(value)) value.forEach(checkStrings);
   else if (value && typeof value === 'object') Object.values(value).forEach(checkStrings);
@@ -51,3 +53,11 @@ checkStrings(en);
 assert.doesNotMatch(JSON.stringify(en), /undefined/, 'English story has no missing template values');
 assert.doesNotMatch(JSON.stringify(en), /will definitely|destined|\bfate\b|get back together|get rich|\binvest\b/i, 'English story avoids prohibited promises');
 console.log('story-copy.test.mjs: English locale structure and copy checks passed.');
+const viStart = html.indexOf('function buildVietnameseStoryCopy(zh)');
+const viEnd = html.indexOf('\n  const STORY_COPY={zh:', viStart);
+assert.ok(viStart >= 0 && viEnd > viStart, 'Vietnamese copy builder exists');
+const buildVietnamese = vm.runInNewContext(html.slice(viStart, viEnd) + '; buildVietnameseStoryCopy');
+const vi = buildVietnamese(zh);
+assert.deepEqual(shape(vi), shape(zh), 'Vietnamese story keys match Chinese exactly');
+checkStrings(vi);
+
