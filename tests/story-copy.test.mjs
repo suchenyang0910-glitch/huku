@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import vm from 'node:vm';
+
+const html = await readFile(new URL('../haku.html', import.meta.url), 'utf8');
+const render = html.slice(html.indexOf('  function renderManga(){'), html.indexOf('\n  function changeMangaPage(', html.indexOf('  function renderManga(){')));
+const legacyStart = render.indexOf('}else if(pageIndex===0){');
+const legacy = render.slice(legacyStart);
+const englishPageTwo = legacy.slice(legacy.indexOf('}else if(pageIndex===1){'), legacy.indexOf('}else if(pageIndex===2){'));
+const englishPageThree = legacy.slice(legacy.indexOf('}else if(pageIndex===2){'), legacy.indexOf('}else if(pageIndex===3){'));
+assert.equal((englishPageTwo.match(/ziweiStoryLine\('soul'\)/g) || []).length, 1, 'English page 2 renders the Zi Wei soul line once');
+assert.doesNotMatch(render, /if\(pageIndex===1&&storyZiwei/, 'no second Zi Wei soul line is appended after rendering');
+assert.match(englishPageThree, /elementNarrative\(facts\.strongest,'strongest',rangeText\(facts\.strongest\[0\]\),copy,el\)/, 'English page 3 uses the shared strongest-elements narrative');
+assert.match(englishPageThree, /elementNarrative\(facts\.weakest,'weakest',rangeText\(facts\.weakest\[0\]\),copy,el\)/, 'English page 3 uses the shared weakest-elements narrative');
+assert.match(englishPageThree, /facts\.countRanges\[k\]\.min===facts\.countRanges\[k\]\.max/, 'English page 3 preserves uncertain count ranges');
+const helper = html.match(/function elementNarrative\(keys,kind,count,copy,names\)\{[\s\S]*?\n  \}/)?.[0];
+assert.ok(helper, 'shared element narrative helper exists');
+const elementNarrative = vm.runInNewContext(`${helper}; elementNarrative`);
+const enCopy = { elementPair: '{a} and {b}', maxPair: '{elements} share the lead.' };
+const enNames = { fire: 'Fire', metal: 'Metal' };
+const pair = elementNarrative(['fire', 'metal'], 'strongest', '4', enCopy, enNames);
+assert.equal(pair.label, 'Fire and Metal · 4');
+assert.equal(pair.text, 'Fire and Metal share the lead.');
+console.log('story-copy.test.mjs: English page 2 and tied-element regression checks passed.');
