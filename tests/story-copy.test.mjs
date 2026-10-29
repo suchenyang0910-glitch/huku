@@ -54,8 +54,11 @@ const len = text => [...text].length;
 const words = text => text.trim().split(/\s+/).filter(Boolean).length;
 const elementKeys = ['wood','fire','earth','metal','water'];
 const actionKeys = [...elementKeys,'none'];
-const longest = [];
-const record = (lang, page, chars, combo) => { longest.push({lang,page,chars,combo}); longest.sort((a,b)=>b.chars-a.chars); longest.length=3; };
+const longest = new Map();
+const record = (lang, page, length, unit, combo) => {
+  const key = `${lang}/${page}`;
+  if (!longest.has(key) || longest.get(key).length < length) longest.set(key, {lang,page,length,unit,combo});
+};
 for (const [themeKey, zhTheme] of Object.entries(zh.themes)) {
   const enTheme = STORY_COPY.en.themes[themeKey];
   const p4Keys = Object.keys(zhTheme.p4).filter(key => key !== 'title');
@@ -63,12 +66,13 @@ for (const [themeKey, zhTheme] of Object.entries(zh.themes)) {
   for (const state of p4Keys) for (const concern of concerns) for (const duration of zh.common.p5.duration) for (const element of elementKeys) for (const action of actionKeys) {
     const zhEntry=zhTheme.p5[concern][element],zhDuration=duration;
     const zhBody=zhEntry.text.replaceAll('{duration}',zhDuration)+(duration===zh.common.p5.duration[3]?zh.common.p5.seekSupport:'');
-    const zhCount=len(zhBody);assert.ok(zhCount<=220, `zh P5 <=220 (${themeKey}/${state}/${concern}/${duration}/${element}/${action}: ${zhCount})`);record('zh','P5',zhCount,`${themeKey}/${state}/${concern}/${duration}/${element}/${action}`);
+    const combo=`${themeKey}/${state}/${concern}/${duration}/${element}/${action}`;
+    const zhCount=len(zhBody);assert.ok(zhCount<=220, `zh P5 <=220 (${combo}: ${zhCount})`);record('zh','P5',zhCount,'chars',combo);
     const enDuration=STORY_COPY.en.common.p5.duration[zh.common.p5.duration.indexOf(duration)];
     const enBody=enTheme.p5[concern][element].text.replaceAll('{duration}',enDuration)+(duration===zh.common.p5.duration[3]?STORY_COPY.en.common.p5.seekSupport:'');
-    const enWords=words(enBody);assert.ok(enWords<=140, `en P5 <=140 words (${themeKey}/${state}/${concern}/${duration}/${element}/${action}: ${enWords})`);
+    const enWords=words(enBody);assert.ok(enWords<=140, `en P5 <=140 words (${combo}: ${enWords})`);record('en','P5',enWords,'words',combo);
     const zhAction=zhTheme.p6.lanternAction[action],zhHeart=zhTheme.p6.lanternHeart[concern],zhLantern=zh.common.p6.lanternFormat.replace('{action}',zhAction).replace('{heart}',zhHeart),zhKeepsake=zhTheme.p5[concern][element].keepsake;
-    const zhP6=zh.common.p6.opener+zhLantern+zh.common.p6.keepsakeLabel+zhKeepsake+zhTheme.p6.reflection,zhP6Count=len(zhP6);assert.ok(zhP6Count<=160, `zh P6 <=160 (${themeKey}/${state}/${concern}/${duration}/${element}/${action}: ${zhP6Count})`);record('zh','P6',zhP6Count,`${themeKey}/${state}/${concern}/${duration}/${element}/${action}`);
+    const zhP6=zh.common.p6.opener+zhLantern+zh.common.p6.keepsakeLabel+zhKeepsake+zhTheme.p6.reflection,zhP6Count=len(zhP6);assert.ok(zhP6Count<=160, `zh P6 <=160 (${combo}: ${zhP6Count})`);record('zh','P6',zhP6Count,'chars',combo);
   }
 }
-console.log(`story-copy.test.mjs: 5 locale schemas, policy, rendering regression, and length checks passed; longest=${JSON.stringify(longest)}`);
+console.log(`story-copy.test.mjs: 5 locale schemas, policy, rendering regression, and length checks passed; longest=${JSON.stringify([...longest.values()].sort((a,b)=>b.length-a.length).slice(0,3))}`);
