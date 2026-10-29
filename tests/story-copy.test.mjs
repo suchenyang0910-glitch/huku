@@ -76,4 +76,4 @@ for (const [themeKey, zhTheme] of Object.entries(zh.themes)) {
     const zhP6=zh.common.p6.opener+zhLantern+zh.common.p6.keepsakeLabel+zhKeepsake+zhTheme.p6.reflection,zhP6Count=len(zhP6);assert.ok(zhP6Count<=160, `zh P6 <=160 (${combo}: ${zhP6Count})`);record('zh','P6',zhP6Count,'chars',combo);
   }
 }
-console.log(`story-copy.test.mjs: 5 locale schemas (${Object.fromEntries(Object.entries(STORY_COPY).map(([lang, copy]) => [lang, stringCount(copy)]))} strings each), policy, rendering regression, and length checks passed; longest=${JSON.stringify([...longest.values()].sort((a,b)=>b.length-a.length).slice(0,3))}`);
+console.log(`story-copy.test.mjs: 5 locale schemas (${JSON.stringify(Object.fromEntries(Object.entries(STORY_COPY).map(([lang, copy]) => [lang, stringCount(copy)])))} strings each), policy, rendering regression, and length checks passed; longest=${JSON.stringify([...longest.values()].sort((a,b)=>b.length-a.length).slice(0,3))}`);
