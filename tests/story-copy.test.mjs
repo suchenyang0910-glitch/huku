@@ -22,3 +22,11 @@ const pair = elementNarrative(['fire', 'metal'], 'strongest', '4', enCopy, enNam
 assert.equal(pair.label, 'Fire and Metal · 4');
 assert.equal(pair.text, 'Fire and Metal share the lead.');
 console.log('story-copy.test.mjs: English page 2 and tied-element regression checks passed.');
+
+assert.match(html, /story-keepsake[^}]*user-select:text/, 'keepsake text stays selectable');
+assert.match(html, /common.p6.keepsakeLabel/, 'keepsake card has its localized label');
+assert.match(html, /story-details summary{[^}]*min-height:44px/, 'details summary has a 44px target');
+assert.ok(html.includes('story-details summary:focus-visible{outline:3px solid var(--coral)'), 'details summary keeps a visible keyboard focus state');
+assert.match(html, /story-details summary::-webkit-details-marker{display:none}/, 'default disclosure triangle is replaced by the designed control');
+assert.ok(html.includes('.comic-subline .story-details .pillar-note{margin:6px 0 0;font:400 11px'), 'expanded birth-data note uses small type');
+console.log('story-copy.test.mjs: keepsake and disclosure presentation checks passed.');
