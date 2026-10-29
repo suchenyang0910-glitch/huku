@@ -97,7 +97,7 @@ for (const theme of THEME_KEYS) for (const [index, key] of sceneKeys[theme].conc
 }
 for (const element of ELEMENTS) assert.equal(storyIllustrationId(5, { ...facts, weeklyElement: element }, {}, element), `p6-action-${element}`);
 assert.match(html, /actionElement=facts\.weeklyElement/);
-assert.match(html, /weeklyActions\[actionElement\]/, 'page six copy and illustration use the same actionElement variable');
+assert.match(html, /lanternAction\[actionElement\|\|'none'\]/, 'page six copy uses the illustration action element or the no-timing action');
 assert.deepEqual(Array.from(storyIllustrationCandidates('p1-opening-a')), ['p1-opening-a', 'fallback']);
 assert.deepEqual(Array.from(storyIllustrationCandidates('fallback')), ['fallback']);
 

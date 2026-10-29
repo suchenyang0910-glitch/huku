@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdir, readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
@@ -12,13 +13,19 @@ try {
 }
 
 const root = path.resolve(import.meta.dirname, '..');
-const screenshotDir = path.join(root, 'docs', 'screenshots');
+const screenshotDir = process.env.HAKU_SCREENSHOT_DIR ? path.resolve(process.env.HAKU_SCREENSHOT_DIR) : path.join(root, 'docs', 'screenshots');
+const baselineHtml = execFileSync('git', ['show', '01d8211:haku.html'], { encoding: 'utf8' });
 const contentTypes = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.webp': 'image/webp', '.png': 'image/png', '.svg': 'image/svg+xml' };
 const server = createServer(async (request, response) => {
   try {
     const pathname = new URL(request.url, 'http://mini.localhost').pathname;
     const relative = pathname === '/' ? 'haku.html' : pathname.startsWith('/assets/') ? `public${pathname}` : pathname.slice(1);
-    if (relative !== 'haku.html' && !relative.startsWith('public/assets/')) throw new Error('not found');
+    if (relative !== 'haku.html' && relative !== 'baseline.html' && !relative.startsWith('public/assets/')) throw new Error('not found');
+    if (relative === 'baseline.html') {
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      response.end(baselineHtml);
+      return;
+    }
     const file = path.resolve(root, relative);
     if (!file.startsWith(root + path.sep)) throw new Error('not found');
     const body = await readFile(file);
@@ -36,7 +43,7 @@ const locales = ['en', 'vi', 'zh', 'km', 'th'];
 const states = ['unverified', 'verified-unsaved', 'saved'];
 const viewports = [{ width: 390, height: 750 }, { width: 360, height: 640 }];
 
-async function openScenario({ locale = 'en', state = 'verified-unsaved', viewport = viewports[0], consentFails = false, profileFails = false, telegram = true, colorScheme = 'light', storyMode = 'ok', deviceScaleFactor = 1 } = {}) {
+async function openScenario({ locale = 'en', state = 'verified-unsaved', viewport = viewports[0], consentFails = false, profileFails = false, telegram = true, colorScheme = 'light', storyMode = 'ok', deviceScaleFactor = 1, source = 'haku.html' } = {}) {
   const context = await browser.newContext({ viewport, deviceScaleFactor });
   const storyRequests = [];
   await context.route('**/assets/story/**', route => {
@@ -123,7 +130,7 @@ async function openScenario({ locale = 'en', state = 'verified-unsaved', viewpor
     const expectedApiMiss = response.url().includes('/api/telegram/') && [401, 404, 500].includes(response.status());
     if (response.status() >= 400 && !expectedApiMiss) errors.push(`${response.status()} ${response.url()}`);
   });
-  await page.goto(`http://mini.localhost:${port}/haku.html`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`http://mini.localhost:${port}/${source}`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(telegram => window.__hakuTest && window.__hakuTest.authCalls === (telegram ? 1 : 0), telegram);
   await page.waitForTimeout(20);
   return { context, page, errors, storyRequests };
@@ -134,7 +141,7 @@ async function chooseTheme(page, theme = 'love') {
   await page.click('#question-next');
 }
 
-async function completeReading(page, { gender = 'male', unknownTime = false, theme = 'love', state = 0, concern = 0 } = {}) {
+async function completeReading(page, { gender = 'male', unknownTime = false, theme = 'love', state = 0, concern = 0, duration = 0, hour = 12, minute = 0 } = {}) {
   await page.click('#start-reading');
   await chooseTheme(page, theme);
   await page.click('#answer-date');
@@ -146,19 +153,116 @@ async function completeReading(page, { gender = 'male', unknownTime = false, the
   if (unknownTime) await page.check('#unknown-time');
   else {
     await page.click('#answer-time');
+    await page.locator(`#time-hour-${hour}`).click();
+    await page.locator(`#time-minute-${minute}`).click();
     await page.click('#wheel-confirm');
   }
   await page.click('#question-next');
   await page.locator(`[name="answer-gender"][value="${gender}"]`).check();
   await page.click('#question-next');
-  for (const [name, value] of [['relationship', state], ['concern', concern], ['duration', 0]]) {
+  for (const [name, value] of [['relationship', state], ['concern', concern], ['duration', duration]]) {
     await page.locator(`[name="answer-${name}"][value="${value}"]`).check();
     await page.click('#question-next');
   }
   await page.waitForFunction(() => window.__hakuTest.profilePuts === 1);
 }
 
+async function storyPages(page, onPage) {
+  await page.waitForFunction(() => document.querySelectorAll('#reader-dots [data-page]').length === 6);
+  const pages = [];
+  for (let index = 0; index < 6; index++) {
+    await page.waitForFunction(expected => document.querySelector('#reader-progress').textContent === `${expected + 1} / 6`, index);
+    pages.push(await page.evaluate(() => ({
+      title: document.querySelector('#comic-line').textContent,
+      body: document.querySelector('#comic-subline').innerText,
+      style: {
+        subline: getComputedStyle(document.querySelector('#comic-subline')).font,
+        copy: getComputedStyle(document.querySelector('#comic-subline .story-copy') || document.querySelector('#comic-subline')).font,
+        note: document.querySelector('#comic-subline .pillar-note') ? getComputedStyle(document.querySelector('#comic-subline .pillar-note')).font : null
+      }
+    })));
+    await onPage?.(index, page);
+    if (index < 5) await page.locator(`#reader-dots [data-page="${index + 1}"]`).click();
+  }
+  return pages;
+}
+
 try {
+  if (process.argv.includes('--task21-only')) {
+    await mkdir(screenshotDir, { recursive: true });
+    const zh = await openScenario({ locale: 'zh', state: 'saved', viewport: { width: 390, height: 750 } });
+    await completeReading(zh.page, { theme: 'love', state: 2, concern: 1, duration: 3, hour: 13, minute: 30 });
+    const zhProfile = await zh.page.evaluate(() => JSON.parse(localStorage.getItem('__hakuFakeProfile')));
+    assert.equal(zhProfile.birth_date, '1990-05-15', 'task 21 Chinese screenshots use the requested date');
+    assert.equal(zhProfile.birth_time, '13:30', 'task 21 Chinese screenshots use the requested time');
+    assert.equal(zhProfile.place, 'cn', 'task 21 Chinese screenshots use China as the birthplace');
+    await zh.page.waitForFunction(() => document.querySelectorAll('#reader-dots [data-page]').length === 6);
+    for (let page = 0; page < 6; page++) {
+      await zh.page.waitForFunction(expected => document.querySelector('#reader-progress').textContent === `${expected + 1} / 6`, page);
+      if (page === 0) {
+        await zh.page.locator('.story-details summary').click();
+        await zh.page.screenshot({ path: path.join(screenshotDir, 'task-21-zh-details-open.png'), fullPage: true });
+        await zh.page.locator('.story-details summary').click();
+      }
+      if (page === 5) await zh.page.screenshot({ path: path.join(screenshotDir, 'task-21-zh-keepsake-light.png'), fullPage: true });
+      if (page === 4) {
+        const size = await zh.page.evaluate(() => ({ story: parseFloat(getComputedStyle(document.querySelector('#comic-subline .story-copy')).fontSize), main: parseFloat(getComputedStyle(document.querySelector('#comic-subline')).fontSize) }));
+        assert.ok(size.story >= size.main, 'Chinese page 5 copy is at least as large as the main story text');
+      }
+      await zh.page.screenshot({ path: path.join(screenshotDir, `task-21-zh-light-p${page + 1}.png`), fullPage: true });
+      if (page < 5) await zh.page.locator(`#reader-dots [data-page="${page + 1}"]`).click();
+    }
+    assert.deepEqual(zh.errors, []);
+    await zh.context.close();
+    const en = await openScenario({ locale: 'en', state: 'saved', viewport: { width: 390, height: 750 }, colorScheme: 'dark' });
+    await completeReading(en.page, { theme: 'love', state: 2, concern: 1, duration: 3, hour: 13, minute: 30 });
+    const enProfile = await en.page.evaluate(() => JSON.parse(localStorage.getItem('__hakuFakeProfile')));
+    assert.equal(enProfile.birth_date, '1990-05-15');
+    assert.equal(enProfile.birth_time, '13:30');
+    assert.equal(enProfile.place, 'cn');
+    await en.page.waitForFunction(() => document.querySelectorAll('#reader-dots [data-page]').length === 6);
+    await en.page.screenshot({ path: path.join(screenshotDir, 'task-21-en-dark-p1.png'), fullPage: true });
+    await en.page.locator('#reader-dots [data-page="1"]').click();
+    await en.page.waitForFunction(() => document.querySelector('#reader-progress').textContent === '2 / 6');
+    const p2 = await en.page.locator('#comic-subline').innerText();
+    assert.equal(p2.split('\n').filter(line => line.includes('Your Life Palace')).length, 1, 'English page 2 includes the Zi Wei line once');
+    await en.page.screenshot({ path: path.join(screenshotDir, 'task-21-en-dark-p2.png'), fullPage: true });
+    for (let page = 2; page <= 5; page++) {
+      await en.page.locator(`#reader-dots [data-page="${page}"]`).click();
+      await en.page.waitForFunction(expected => document.querySelector('#reader-progress').textContent === `${expected + 1} / 6`, page);
+      if (page === 2) {
+        const p3 = await en.page.locator('#comic-subline').innerText();
+        assert.match(p3, /Fire and Metal.*equally/i, 'English page 3 uses tied-element narrative');
+      }
+      if (page + 1 === 6) await en.page.screenshot({ path: path.join(screenshotDir, 'task-21-en-keepsake-dark.png'), fullPage: true });
+      if (page + 1 === 5) {
+        const size = await en.page.evaluate(() => ({ story: parseFloat(getComputedStyle(document.querySelector('#comic-subline .story-copy')).fontSize), main: parseFloat(getComputedStyle(document.querySelector('#comic-subline')).fontSize) }));
+        assert.ok(size.story >= size.main, 'English page 5 copy is at least as large as the main story text');
+      }
+      await en.page.screenshot({ path: path.join(screenshotDir, `task-21-en-dark-p${page + 1}.png`), fullPage: true });
+    }
+    assert.deepEqual(en.errors, []);
+    await en.context.close();
+
+    for (const locale of ['vi','th','km']) {
+      const baseline = await openScenario({ locale, state: 'saved', viewport: { width: 390, height: 750 }, source: 'baseline.html' });
+      await completeReading(baseline.page, { theme: 'love', state: 2, concern: 1, duration: 3, hour: 13, minute: 30 });
+      const expected = await storyPages(baseline.page);
+      const legacy = await openScenario({ locale, state: 'saved', viewport: { width: 390, height: 750 } });
+      await completeReading(legacy.page, { theme: 'love', state: 2, concern: 1, duration: 3, hour: 13, minute: 30 });
+      const actual = await storyPages(legacy.page, async (index, page) => {
+        if (locale === 'vi' && index === 4) {
+          assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0, 'Vietnamese legacy page 5 has no horizontal overflow at 390px');
+          await page.screenshot({ path: path.join(screenshotDir, 'task-21-vi-legacy-p5.png'), fullPage: true });
+        }
+      });
+      assert.deepEqual(actual, expected, `${locale} six-page title, body, and typography match main 01d8211`);
+      assert.deepEqual(baseline.errors, []);
+      assert.deepEqual(legacy.errors, []);
+      await baseline.context.close();
+      await legacy.context.close();
+    }
+  } else {
   for (const viewport of viewports) {
     for (const locale of locales) {
       for (const state of states) {
@@ -656,6 +760,7 @@ try {
   await oldConsent.context.close();
 
   console.log('check-first-screen.mjs: layout, Telegram controls, shared wheels, four localized reading themes, profiles, story art, Zi Wei, routing, and screenshots pass.');
+  }
 } finally {
   await browser.close();
   await new Promise(resolve => server.close(resolve));
