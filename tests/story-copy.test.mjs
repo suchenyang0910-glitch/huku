@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 
-const html = await readFile(new URL('../haku.html', import.meta.url), 'utf8');
+const html = (await readFile(new URL('../haku.html', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
 const declaration = html.match(/const STORY_COPY=\{zh:(\{[\s\S]*\})\};\s+STORY_COPY\.en=/);
 assert.ok(declaration, 'STORY_COPY declaration exists');
 const zh = JSON.parse(declaration[1]);
@@ -73,7 +73,7 @@ const pairCopy = STORY_COPY.en.common.p3;
 const pairLabel = pairCopy.elementPair.replace('{a}', 'Fire').replace('{b}', 'Metal');
 assert.match(pairCopy.maxPair.replace('{elements}', pairLabel), /Fire and Metal.*equally/i, 'fire and metal ties use the paired English narrative');
 
-const baseline = execFileSync('git', ['show','01d8211:haku.html'], { encoding: 'utf8' });
+const baseline = execFileSync('git', ['show','01d8211:haku.html'], { encoding: 'utf8' }).replace(/\r\n/g, '\n');
 const fallbackBranch = source => {
   const start = source.indexOf('function renderManga(){');
   const end = source.indexOf('\n  function changeMangaPage(', start);
