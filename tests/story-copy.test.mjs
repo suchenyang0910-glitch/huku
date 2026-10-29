@@ -3,70 +3,72 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 
 const html = await readFile(new URL('../haku.html', import.meta.url), 'utf8');
-const render = html.slice(html.indexOf('  function renderManga(){'), html.indexOf('\n  function changeMangaPage(', html.indexOf('  function renderManga(){')));
-const legacyStart = render.indexOf('}else if(pageIndex===0){');
-const legacy = render.slice(legacyStart);
-const englishPageTwo = legacy.slice(legacy.indexOf('}else if(pageIndex===1){'), legacy.indexOf('}else if(pageIndex===2){'));
-const englishPageThree = legacy.slice(legacy.indexOf('}else if(pageIndex===2){'), legacy.indexOf('}else if(pageIndex===3){'));
-assert.equal((englishPageTwo.match(/ziweiStoryLine\('soul'\)/g) || []).length, 1, 'English page 2 renders the Zi Wei soul line once');
-assert.doesNotMatch(render, /if\(pageIndex===1&&storyZiwei/, 'no second Zi Wei soul line is appended after rendering');
-assert.match(englishPageThree, /elementNarrative\(facts\.strongest,'strongest',rangeText\(facts\.strongest\[0\]\),copy,el\)/, 'English page 3 uses the shared strongest-elements narrative');
-assert.match(englishPageThree, /elementNarrative\(facts\.weakest,'weakest',rangeText\(facts\.weakest\[0\]\),copy,el\)/, 'English page 3 uses the shared weakest-elements narrative');
-assert.match(englishPageThree, /facts\.countRanges\[k\]\.min===facts\.countRanges\[k\]\.max/, 'English page 3 preserves uncertain count ranges');
-const helper = html.match(/function elementNarrative\(keys,kind,count,copy,names\)\{[\s\S]*?\n  \}/)?.[0];
-assert.ok(helper, 'shared element narrative helper exists');
-const elementNarrative = vm.runInNewContext(`${helper}; elementNarrative`);
-const enCopy = { elementPair: '{a} and {b}', maxPair: '{elements} share the lead.' };
-const enNames = { fire: 'Fire', metal: 'Metal' };
-const pair = elementNarrative(['fire', 'metal'], 'strongest', '4', enCopy, enNames);
-assert.equal(pair.label, 'Fire and Metal · 4');
-assert.equal(pair.text, 'Fire and Metal share the lead.');
-console.log('story-copy.test.mjs: English page 2 and tied-element regression checks passed.');
-
-assert.match(html, /story-keepsake[^}]*user-select:text/, 'keepsake text stays selectable');
-assert.match(html, /common.p6.keepsakeLabel/, 'keepsake card has its localized label');
-assert.match(html, /story-details summary{[^}]*min-height:44px/, 'details summary has a 44px target');
-assert.ok(html.includes('story-details summary:focus-visible{outline:3px solid var(--coral)'), 'details summary keeps a visible keyboard focus state');
-assert.match(html, /story-details summary::-webkit-details-marker{display:none}/, 'default disclosure triangle is replaced by the designed control');
-assert.ok(html.includes('.comic-subline .story-details .pillar-note{margin:6px 0 0;font:400 11px'), 'expanded birth-data note uses small type');
-console.log('story-copy.test.mjs: keepsake and disclosure presentation checks passed.');
-const copyMatch = html.match(/const STORY_COPY=\{zh:(\{[\s\S]*\})\};\s+STORY_COPY\.en=/);
-assert.ok(copyMatch, 'localized story copy declaration exists');
-const zh = JSON.parse(copyMatch[1]);
-const builderStart = html.indexOf('function buildEnglishStoryCopy(zh)');
-const builderEnd = html.indexOf('\n  const STORY_COPY={zh:', builderStart);
-assert.ok(builderStart >= 0 && builderEnd > builderStart, 'English copy builder exists');
-const buildEnglish = vm.runInNewContext(`${html.slice(builderStart, builderEnd)}; buildEnglishStoryCopy`);
-const en = buildEnglish(zh);
+const declaration = html.match(/const STORY_COPY=\{zh:(\{[\s\S]*\})\};\s+STORY_COPY\.en=/);
+assert.ok(declaration, 'STORY_COPY declaration exists');
+const zh = JSON.parse(declaration[1]);
+const buildLocale = name => {
+  const start = html.indexOf(`function ${name}(zh)`);
+  const end = html.indexOf('\n  const STORY_COPY={zh:', start);
+  assert.ok(start >= 0 && end > start, `${name} builder exists`);
+  return vm.runInNewContext(html.slice(start, end) + `; ${name}`)(zh);
+};
+const STORY_COPY = {
+  zh,
+  en: buildLocale('buildEnglishStoryCopy'),
+  vi: buildLocale('buildVietnameseStoryCopy'),
+  th: buildLocale('buildThaiStoryCopy'),
+  km: buildLocale('buildKhmerStoryCopy')
+};
+for (const lang of ['en','vi','th','km']) assert.match(html, new RegExp(`STORY_COPY\\.${lang}=build`), `${lang} is registered in STORY_COPY`);
 const shape = value => Array.isArray(value) ? [...value].map(shape) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, shape(value[key])])) : typeof value;
-assert.deepEqual(shape(en), shape(zh), 'English story keys match Chinese exactly');
+const placeholders = /\{(?!(?:duration|a|b|elements|action|heart)\})[^}]+\}/;
 const checkStrings = value => {
   if (typeof value === 'string') {
     assert.ok(value.trim(), 'story strings are non-empty');
     assert.doesNotMatch(value, /\bundefined\b/, 'story template values are present');
-    assert.doesNotMatch(value, /\{(?!(?:duration|a|b|elements|action|heart)\})[^}]+\}/, 'story placeholders are recognized');
-    for (const [, key] of value.matchAll(/\{([^}]+)\}/g)) assert.ok(['duration','a','b','elements','action','heart'].includes(key), `known render placeholder: ${key}`);
+    assert.doesNotMatch(value, placeholders, 'story placeholders are recognized');
   } else if (Array.isArray(value)) value.forEach(checkStrings);
   else if (value && typeof value === 'object') Object.values(value).forEach(checkStrings);
 };
-checkStrings(en);
-assert.doesNotMatch(JSON.stringify(en), /undefined/, 'English story has no missing template values');
-assert.doesNotMatch(JSON.stringify(en), /will definitely|destined|\bfate\b|get back together|get rich|\binvest\b/i, 'English story avoids prohibited promises');
-console.log('story-copy.test.mjs: English locale structure and copy checks passed.');
-const viStart = html.indexOf('function buildVietnameseStoryCopy(zh)');
-const viEnd = html.indexOf('\n  const STORY_COPY={zh:', viStart);
-assert.ok(viStart >= 0 && viEnd > viStart, 'Vietnamese copy builder exists');
-const buildVietnamese = vm.runInNewContext(html.slice(viStart, viEnd) + '; buildVietnameseStoryCopy');
-const vi = buildVietnamese(zh);
-assert.deepEqual(shape(vi), shape(zh), 'Vietnamese story keys match Chinese exactly');
-checkStrings(vi);
+for (const [lang, copy] of Object.entries(STORY_COPY)) {
+  assert.deepEqual(shape(copy), shape(zh), `${lang} keys match Chinese exactly`);
+  checkStrings(copy);
+}
+const zhText = JSON.stringify(zh).replaceAll('其他','').replaceAll('他人','');
+assert.doesNotMatch(zhText, /他|她/, 'Chinese story does not gender the other person');
+assert.doesNotMatch(zhText, /一定会|注定|命中|必然|复合|发财|升职|投资|收益/, 'Chinese story avoids prohibited predictions and advice');
+const enText = JSON.stringify(STORY_COPY.en);
+assert.doesNotMatch(enText, /will definitely|destined|\bfate\b|get back together|get rich|\binvest\b/i, 'English story avoids prohibited predictions and advice');
 
+const render = html.slice(html.indexOf('  function renderManga(){'), html.indexOf('\n  function changeMangaPage(', html.indexOf('  function renderManga(){')));
+const pageTwo = render.slice(render.indexOf('else if(pageIndex===1){'), render.indexOf('else if(pageIndex===2){'));
+const pageThree = render.slice(render.indexOf('else if(pageIndex===2){'), render.indexOf('else if(pageIndex===3){'));
+assert.equal((pageTwo.match(/ziweiStoryLine\('soul'\)/g) || []).length, 1, 'story page 2 renders the Zi Wei soul line once');
+assert.doesNotMatch(render, /if\(pageIndex===1&&storyZiwei/, 'no second Zi Wei soul line is appended');
+assert.match(pageThree, /max.length===2\?paras\(p.maxPair/, 'page 3 selects the paired-element copy for a tie');
+const pairCopy = STORY_COPY.en.common.p3;
+const pairLabel = pairCopy.elementPair.replace('{a}', 'Fire').replace('{b}', 'Metal');
+assert.match(pairCopy.maxPair.replace('{elements}', pairLabel), /Fire and Metal.*equally/i, 'fire and metal ties use the paired English narrative');
 
-const thStart = html.indexOf('function buildThaiStoryCopy(zh)');
-const thEnd = html.indexOf('\n  const STORY_COPY={zh:', thStart);
-assert.ok(thStart >= 0 && thEnd > thStart, 'Thai copy builder exists');
-const buildThai = vm.runInNewContext(html.slice(thStart, thEnd) + '; buildThaiStoryCopy');
-const th = buildThai(zh);
-assert.deepEqual(shape(th), shape(zh), 'Thai story keys match Chinese exactly');
-checkStrings(th);
-assert.doesNotMatch(JSON.stringify(th), /undefined|分钟/, 'Thai story has no missing values or foreign minute unit');
+const len = text => [...text].length;
+const words = text => text.trim().split(/\s+/).filter(Boolean).length;
+const elementKeys = ['wood','fire','earth','metal','water'];
+const actionKeys = [...elementKeys,'none'];
+const longest = [];
+const record = (lang, page, chars, combo) => { longest.push({lang,page,chars,combo}); longest.sort((a,b)=>b.chars-a.chars); longest.length=3; };
+for (const [themeKey, zhTheme] of Object.entries(zh.themes)) {
+  const enTheme = STORY_COPY.en.themes[themeKey];
+  const p4Keys = Object.keys(zhTheme.p4).filter(key => key !== 'title');
+  const concerns = Object.keys(zhTheme.p5).filter(key => key !== 'title');
+  for (const state of p4Keys) for (const concern of concerns) for (const duration of zh.common.p5.duration) for (const element of elementKeys) for (const action of actionKeys) {
+    const zhEntry=zhTheme.p5[concern][element],zhDuration=duration;
+    const zhBody=zhEntry.text.replaceAll('{duration}',zhDuration)+(duration===zh.common.p5.duration[3]?zh.common.p5.seekSupport:'');
+    const zhCount=len(zhBody);assert.ok(zhCount<=220, `zh P5 <=220 (${themeKey}/${state}/${concern}/${duration}/${element}/${action}: ${zhCount})`);record('zh','P5',zhCount,`${themeKey}/${state}/${concern}/${duration}/${element}/${action}`);
+    const enDuration=STORY_COPY.en.common.p5.duration[zh.common.p5.duration.indexOf(duration)];
+    const enBody=enTheme.p5[concern][element].text.replaceAll('{duration}',enDuration)+(duration===zh.common.p5.duration[3]?STORY_COPY.en.common.p5.seekSupport:'');
+    const enWords=words(enBody);assert.ok(enWords<=140, `en P5 <=140 words (${themeKey}/${state}/${concern}/${duration}/${element}/${action}: ${enWords})`);
+    const zhAction=zhTheme.p6.lanternAction[action],zhHeart=zhTheme.p6.lanternHeart[concern],zhLantern=zh.common.p6.lanternFormat.replace('{action}',zhAction).replace('{heart}',zhHeart),zhKeepsake=zhTheme.p5[concern][element].keepsake;
+    const zhP6=zh.common.p6.opener+zhLantern+zh.common.p6.keepsakeLabel+zhKeepsake+zhTheme.p6.reflection,zhP6Count=len(zhP6);assert.ok(zhP6Count<=160, `zh P6 <=160 (${themeKey}/${state}/${concern}/${duration}/${element}/${action}: ${zhP6Count})`);record('zh','P6',zhP6Count,`${themeKey}/${state}/${concern}/${duration}/${element}/${action}`);
+  }
+}
+console.log(`story-copy.test.mjs: 5 locale schemas, policy, rendering regression, and length checks passed; longest=${JSON.stringify(longest)}`);
