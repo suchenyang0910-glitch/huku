@@ -30,3 +30,23 @@ assert.ok(html.includes('story-details summary:focus-visible{outline:3px solid v
 assert.match(html, /story-details summary::-webkit-details-marker{display:none}/, 'default disclosure triangle is replaced by the designed control');
 assert.ok(html.includes('.comic-subline .story-details .pillar-note{margin:6px 0 0;font:400 11px'), 'expanded birth-data note uses small type');
 console.log('story-copy.test.mjs: keepsake and disclosure presentation checks passed.');
+const copyMatch = html.match(/const STORY_COPY=\{zh:(\{[\s\S]*\})\};\s+STORY_COPY\.en=/);
+assert.ok(copyMatch, 'localized story copy declaration exists');
+const zh = JSON.parse(copyMatch[1]);
+const builderStart = html.indexOf('function buildEnglishStoryCopy(zh)');
+const builderEnd = html.indexOf('\n  const STORY_COPY={zh:', builderStart);
+assert.ok(builderStart >= 0 && builderEnd > builderStart, 'English copy builder exists');
+const buildEnglish = vm.runInNewContext(`${html.slice(builderStart, builderEnd)}; buildEnglishStoryCopy`);
+const en = buildEnglish(zh);
+const shape = value => Array.isArray(value) ? [...value].map(shape) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, shape(value[key])])) : typeof value;
+assert.deepEqual(shape(en), shape(zh), 'English story keys match Chinese exactly');
+const checkStrings = value => {
+  if (typeof value === 'string') {
+    assert.ok(value.trim(), 'story strings are non-empty');
+    for (const [, key] of value.matchAll(/\{([^}]+)\}/g)) assert.ok(['duration','a','b','elements','action','heart'].includes(key), `known render placeholder: ${key}`);
+  } else if (Array.isArray(value)) value.forEach(checkStrings);
+  else if (value && typeof value === 'object') Object.values(value).forEach(checkStrings);
+};
+checkStrings(en);
+assert.doesNotMatch(JSON.stringify(en), /will definitely|destined|\bfate\b|get back together|get rich|\binvest\b/i, 'English story avoids prohibited promises');
+console.log('story-copy.test.mjs: English locale structure and copy checks passed.');
