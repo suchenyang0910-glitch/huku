@@ -134,7 +134,7 @@ async function chooseTheme(page, theme = 'love') {
   await page.click('#question-next');
 }
 
-async function completeReading(page, { gender = 'male', unknownTime = false, theme = 'love', state = 0, concern = 0 } = {}) {
+async function completeReading(page, { gender = 'male', unknownTime = false, theme = 'love', state = 0, concern = 0, duration = 0, hour = 12, minute = 0 } = {}) {
   await page.click('#start-reading');
   await chooseTheme(page, theme);
   await page.click('#answer-date');
@@ -146,12 +146,14 @@ async function completeReading(page, { gender = 'male', unknownTime = false, the
   if (unknownTime) await page.check('#unknown-time');
   else {
     await page.click('#answer-time');
+    await page.locator(`#time-hour-${hour}`).click();
+    await page.locator(`#time-minute-${minute}`).click();
     await page.click('#wheel-confirm');
   }
   await page.click('#question-next');
   await page.locator(`[name="answer-gender"][value="${gender}"]`).check();
   await page.click('#question-next');
-  for (const [name, value] of [['relationship', state], ['concern', concern], ['duration', 0]]) {
+  for (const [name, value] of [['relationship', state], ['concern', concern], ['duration', duration]]) {
     await page.locator(`[name="answer-${name}"][value="${value}"]`).check();
     await page.click('#question-next');
   }
@@ -159,6 +161,54 @@ async function completeReading(page, { gender = 'male', unknownTime = false, the
 }
 
 try {
+  if (process.argv.includes('--task21-only')) {
+    await mkdir(screenshotDir, { recursive: true });
+    const zh = await openScenario({ locale: 'zh', state: 'saved', viewport: { width: 390, height: 750 } });
+    await completeReading(zh.page, { theme: 'love', state: 2, concern: 1, duration: 3, hour: 13, minute: 30 });
+    const zhProfile = await zh.page.evaluate(() => JSON.parse(localStorage.getItem('__hakuFakeProfile')));
+    assert.equal(zhProfile.birth_date, '1990-05-15', 'task 21 Chinese screenshots use the requested date');
+    assert.equal(zhProfile.birth_time, '13:30', 'task 21 Chinese screenshots use the requested time');
+    assert.equal(zhProfile.place, 'cn', 'task 21 Chinese screenshots use China as the birthplace');
+    await zh.page.waitForFunction(() => document.querySelectorAll('#reader-dots [data-page]').length === 6);
+    for (let page = 0; page < 6; page++) {
+      await zh.page.waitForFunction(expected => document.querySelector('#reader-progress').textContent === `${expected + 1} / 6`, page);
+      if (page === 0) {
+        await zh.page.locator('.story-details summary').click();
+        await zh.page.screenshot({ path: path.join(screenshotDir, 'task-21-zh-details-open.png'), fullPage: true });
+        await zh.page.locator('.story-details summary').click();
+      }
+      if (page === 5) await zh.page.screenshot({ path: path.join(screenshotDir, 'task-21-zh-keepsake-light.png'), fullPage: true });
+      await zh.page.screenshot({ path: path.join(screenshotDir, `task-21-zh-light-p${page + 1}.png`), fullPage: true });
+      if (page < 5) await zh.page.locator(`#reader-dots [data-page="${page + 1}"]`).click();
+    }
+    assert.deepEqual(zh.errors, []);
+    await zh.context.close();
+    const en = await openScenario({ locale: 'en', state: 'saved', viewport: { width: 390, height: 750 }, colorScheme: 'dark' });
+    await completeReading(en.page, { theme: 'love', state: 2, concern: 1, duration: 3, hour: 13, minute: 30 });
+    const enProfile = await en.page.evaluate(() => JSON.parse(localStorage.getItem('__hakuFakeProfile')));
+    assert.equal(enProfile.birth_date, '1990-05-15');
+    assert.equal(enProfile.birth_time, '13:30');
+    assert.equal(enProfile.place, 'cn');
+    await en.page.waitForFunction(() => document.querySelectorAll('#reader-dots [data-page]').length === 6);
+    await en.page.screenshot({ path: path.join(screenshotDir, 'task-21-en-dark-p1.png'), fullPage: true });
+    await en.page.locator('#reader-dots [data-page="1"]').click();
+    await en.page.waitForFunction(() => document.querySelector('#reader-progress').textContent === '2 / 6');
+    const p2 = await en.page.locator('#comic-subline').innerText();
+    assert.equal(p2.split('\n').filter(line => line.includes('Your Life Palace')).length, 1, 'English page 2 includes the Zi Wei line once');
+    await en.page.screenshot({ path: path.join(screenshotDir, 'task-21-en-dark-p2.png'), fullPage: true });
+    for (let page = 2; page <= 5; page++) {
+      await en.page.locator(`#reader-dots [data-page="${page}"]`).click();
+      await en.page.waitForFunction(expected => document.querySelector('#reader-progress').textContent === `${expected + 1} / 6`, page);
+      if (page === 2) {
+        const p3 = await en.page.locator('#comic-subline').innerText();
+        assert.match(p3, /Fire and Metal.*equally/i, 'English page 3 uses tied-element narrative');
+      }
+      if (page + 1 === 6) await en.page.screenshot({ path: path.join(screenshotDir, 'task-21-en-keepsake-dark.png'), fullPage: true });
+      await en.page.screenshot({ path: path.join(screenshotDir, `task-21-en-dark-p${page + 1}.png`), fullPage: true });
+    }
+    assert.deepEqual(en.errors, []);
+    await en.context.close();
+  } else {
   for (const viewport of viewports) {
     for (const locale of locales) {
       for (const state of states) {
@@ -656,6 +706,7 @@ try {
   await oldConsent.context.close();
 
   console.log('check-first-screen.mjs: layout, Telegram controls, shared wheels, four localized reading themes, profiles, story art, Zi Wei, routing, and screenshots pass.');
+  }
 } finally {
   await browser.close();
   await new Promise(resolve => server.close(resolve));
