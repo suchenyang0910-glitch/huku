@@ -26,12 +26,13 @@ const readLiteral = marker => {
 const STORY_COPY = {
   zh,
   en: readLiteral('STORY_COPY.en='),
-  vi: readLiteral('STORY_COPY.vi=')
+  vi: readLiteral('STORY_COPY.vi='),
+  th: readLiteral('STORY_COPY.th=')
 };
-assert.deepEqual(Object.keys(STORY_COPY).sort(), ['en','vi','zh']);
+assert.deepEqual(Object.keys(STORY_COPY).sort(), ['en','th','vi','zh']);
 assert.doesNotMatch(html, /build(?:English|Vietnamese|Thai|Khmer)StoryCopy/);
-assert.doesNotMatch(html, /STORY_COPY\.(?:th|km)\s*=/);
-assert.doesNotMatch(html, /STORY_COPY_VI_DRAFT/);
+assert.doesNotMatch(html, /STORY_COPY\.km\s*=/);
+assert.doesNotMatch(html, /STORY_COPY_(?:VI|TH)_DRAFT/);
 const shape = value => Array.isArray(value) ? [...value].map(shape) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, shape(value[key])])) : typeof value;
 const stringCount = value => typeof value === 'string' ? 1 : Array.isArray(value) ? value.reduce((count, item) => count + stringCount(item), 0) : value && typeof value === 'object' ? Object.values(value).reduce((count, item) => count + stringCount(item), 0) : 0;
 const placeholders = /\{(?!(?:duration|a|b|elements|action|heart)\})[^}]+\}/;
@@ -62,6 +63,8 @@ const enText = JSON.stringify(STORY_COPY.en);
 assert.doesNotMatch(enText, /will definitely|destined|\bfate\b|get back together|get rich|\binvest\b/i, 'English story avoids prohibited predictions and advice');
 const viText = JSON.stringify(STORY_COPY.vi);
 assert.doesNotMatch(viText, /chắc chắn sẽ|định mệnh|số phận đã định|quay lại với nhau|làm giàu|đầu tư|anh ấy|cô ấy/i, 'Vietnamese story avoids deterministic language, financial advice, and gendered references');
+const thText = JSON.stringify(STORY_COPY.th).replaceAll('ภูเขา','').replaceAll('เนินเขา','').replaceAll('หุบเขา','').replaceAll('สันเขา','');
+assert.doesNotMatch(thText, /แน่นอนว่าจะ|พรหมลิขิต|ชะตากรรม|โชคชะตากำหนด|กลับมาคืนดี|รวย|ลงทุน|เขา|เธอ/, 'Thai story avoids deterministic language, financial advice, and gendered pronouns');
 
 const elements = ['wood','fire','earth','metal','water'];
 const uniqueStoryParts = (copy, page) => Object.values(copy.themes).flatMap(theme => {
