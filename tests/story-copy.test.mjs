@@ -25,11 +25,13 @@ const readLiteral = marker => {
 };
 const STORY_COPY = {
   zh,
-  en: readLiteral('STORY_COPY.en=')
+  en: readLiteral('STORY_COPY.en='),
+  vi: readLiteral('STORY_COPY.vi=')
 };
-assert.deepEqual(Object.keys(STORY_COPY).sort(), ['en','zh']);
+assert.deepEqual(Object.keys(STORY_COPY).sort(), ['en','vi','zh']);
 assert.doesNotMatch(html, /build(?:English|Vietnamese|Thai|Khmer)StoryCopy/);
-assert.doesNotMatch(html, /STORY_COPY\.(?:vi|th|km)\s*=/);
+assert.doesNotMatch(html, /STORY_COPY\.(?:th|km)\s*=/);
+assert.doesNotMatch(html, /STORY_COPY_VI_DRAFT/);
 const shape = value => Array.isArray(value) ? [...value].map(shape) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, shape(value[key])])) : typeof value;
 const stringCount = value => typeof value === 'string' ? 1 : Array.isArray(value) ? value.reduce((count, item) => count + stringCount(item), 0) : value && typeof value === 'object' ? Object.values(value).reduce((count, item) => count + stringCount(item), 0) : 0;
 const placeholders = /\{(?!(?:duration|a|b|elements|action|heart)\})[^}]+\}/;
@@ -41,15 +43,25 @@ const checkStrings = value => {
   } else if (Array.isArray(value)) value.forEach(checkStrings);
   else if (value && typeof value === 'object') Object.values(value).forEach(checkStrings);
 };
+const assertPlaceholderParity = (reference, copy, path = 'copy') => {
+  if (typeof reference === 'string') {
+    const tokens = value => [...value.matchAll(/\{(?:duration|a|b|elements|action|heart)\}/g)].map(match => match[0]).sort();
+    assert.deepEqual(tokens(copy), tokens(reference), `${path} placeholders match Chinese`);
+  } else if (Array.isArray(reference)) reference.forEach((value, index) => assertPlaceholderParity(value, copy[index], `${path}[${index}]`));
+  else for (const key of Object.keys(reference)) assertPlaceholderParity(reference[key], copy[key], `${path}.${key}`);
+};
 for (const [lang, copy] of Object.entries(STORY_COPY)) {
   assert.deepEqual(shape(copy), shape(zh), `${lang} keys match Chinese exactly`);
   checkStrings(copy);
+  assertPlaceholderParity(zh, copy, lang);
 }
 const zhText = JSON.stringify(zh).replaceAll('其他','').replaceAll('他人','');
 assert.doesNotMatch(zhText, /他|她/, 'Chinese story does not gender the other person');
 assert.doesNotMatch(zhText, /一定会|注定|命中|必然|复合|发财|升职|投资|收益/, 'Chinese story avoids prohibited predictions and advice');
 const enText = JSON.stringify(STORY_COPY.en);
 assert.doesNotMatch(enText, /will definitely|destined|\bfate\b|get back together|get rich|\binvest\b/i, 'English story avoids prohibited predictions and advice');
+const viText = JSON.stringify(STORY_COPY.vi);
+assert.doesNotMatch(viText, /chắc chắn sẽ|định mệnh|số phận đã định|quay lại với nhau|làm giàu|đầu tư|anh ấy|cô ấy/i, 'Vietnamese story avoids deterministic language, financial advice, and gendered references');
 
 const elements = ['wood','fire','earth','metal','water'];
 const uniqueStoryParts = (copy, page) => Object.values(copy.themes).flatMap(theme => {
