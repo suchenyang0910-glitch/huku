@@ -188,7 +188,50 @@ async function storyPages(page, onPage) {
 }
 
 try {
-  if (process.argv.includes('--task22-vi-only')) {
+  if (process.argv.includes('--task22-th-only')) {
+    await mkdir(screenshotDir, { recursive: true });
+    const th = await openScenario({ locale: 'th', state: 'saved', viewport: { width: 390, height: 750 } });
+    await completeReading(th.page, { theme: 'love', state: 2, concern: 1, duration: 3, hour: 13, minute: 30 });
+    const profile = await th.page.evaluate(() => JSON.parse(localStorage.getItem('__hakuFakeProfile')));
+    assert.equal(profile.birth_date, '1990-05-15');
+    assert.equal(profile.birth_time, '13:30');
+    assert.equal(profile.place, 'cn');
+    await th.page.waitForFunction(() => document.querySelectorAll('#reader-dots [data-page]').length === 6);
+    const waitForIllustration = async pageNumber => {
+      await th.page.waitForFunction(expected => {
+        const image = document.querySelector('#story-illustration');
+        return document.querySelector('#reading-flow').dataset.scene === String(expected) && image.classList.contains('is-loaded') && image.naturalWidth > 0;
+      }, pageNumber);
+      await th.page.waitForFunction(() => Number(getComputedStyle(document.querySelector('#story-illustration')).opacity) >= 0.99);
+    };
+    const verifyPage = async () => {
+      const result = await th.page.evaluate(() => ({
+        overflow: document.documentElement.scrollWidth - innerWidth,
+        text: document.querySelector('#comic-subline').innerText
+      }));
+      assert.equal(result.overflow, 0, 'Thai story has no horizontal overflow at 390px');
+      assert.match(result.text, /[\u0E00-\u0E7F]/, 'Thai story text is present');
+    };
+    await th.page.waitForFunction(() => document.querySelector('#reader-progress').textContent === '1 / 6');
+    await waitForIllustration(1);
+    await verifyPage();
+    await th.page.screenshot({ path: path.join(screenshotDir, 'task-22-th-p1.png'), fullPage: true });
+    await th.page.locator('#reader-dots [data-page="4"]').click();
+    await th.page.waitForFunction(() => document.querySelector('#reader-progress').textContent === '5 / 6');
+    await waitForIllustration(5);
+    await verifyPage();
+    assert.match(await th.page.locator('#comic-subline').innerText(), /มานานมาก/, 'Thai duration reads naturally on page 5');
+    await th.page.screenshot({ path: path.join(screenshotDir, 'task-22-th-p5.png'), fullPage: true });
+    await th.page.locator('#reader-dots [data-page="5"]').click();
+    await th.page.waitForFunction(() => document.querySelector('#reader-progress').textContent === '6 / 6');
+    await waitForIllustration(6);
+    await verifyPage();
+    assert.equal(await th.page.locator('.story-keepsake').count(), 1, 'Thai keepsake card is rendered');
+    assert.ok(await th.page.locator('.story-keepsake').isVisible(), 'Thai keepsake card is visible');
+    await th.page.screenshot({ path: path.join(screenshotDir, 'task-22-th-p6.png'), fullPage: true });
+    assert.deepEqual(th.errors, []);
+    await th.context.close();
+  } else if (process.argv.includes('--task22-vi-only')) {
     await mkdir(screenshotDir, { recursive: true });
     const vi = await openScenario({ locale: 'vi', state: 'saved', viewport: { width: 390, height: 750 } });
     await completeReading(vi.page, { theme: 'love', state: 2, concern: 1, duration: 3, hour: 13, minute: 30 });
@@ -278,7 +321,7 @@ try {
     assert.deepEqual(en.errors, []);
     await en.context.close();
 
-    for (const locale of ['th','km']) {
+    for (const locale of ['km']) {
       const baseline = await openScenario({ locale, state: 'saved', viewport: { width: 390, height: 750 }, source: 'baseline.html' });
       await completeReading(baseline.page, { theme: 'love', state: 2, concern: 1, duration: 3, hour: 13, minute: 30 });
       const expected = await storyPages(baseline.page);
