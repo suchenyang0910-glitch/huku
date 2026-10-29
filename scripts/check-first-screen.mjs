@@ -188,7 +188,41 @@ async function storyPages(page, onPage) {
 }
 
 try {
-  if (process.argv.includes('--task21-only')) {
+  if (process.argv.includes('--task22-vi-only')) {
+    await mkdir(screenshotDir, { recursive: true });
+    const vi = await openScenario({ locale: 'vi', state: 'saved', viewport: { width: 390, height: 750 } });
+    await completeReading(vi.page, { theme: 'love', state: 2, concern: 1, duration: 3, hour: 13, minute: 30 });
+    const profile = await vi.page.evaluate(() => JSON.parse(localStorage.getItem('__hakuFakeProfile')));
+    assert.equal(profile.birth_date, '1990-05-15');
+    assert.equal(profile.birth_time, '13:30');
+    assert.equal(profile.place, 'cn');
+    await vi.page.waitForFunction(() => document.querySelectorAll('#reader-dots [data-page]').length === 6);
+    const verifyPage = async () => {
+      const result = await vi.page.evaluate(() => ({
+        overflow: document.documentElement.scrollWidth - innerWidth,
+        font: getComputedStyle(document.querySelector('#comic-subline .story-copy')).fontFamily
+      }));
+      assert.equal(result.overflow, 0, 'Vietnamese story has no horizontal overflow at 390px');
+      assert.match(result.font, /Be Vietnam Pro/i, 'Vietnamese serif override remains active');
+    };
+    await vi.page.waitForFunction(() => document.querySelector('#reader-progress').textContent === '1 / 6');
+    await verifyPage();
+    await vi.page.screenshot({ path: path.join(screenshotDir, 'task-22-vi-p1.png'), fullPage: true });
+    await vi.page.locator('#reader-dots [data-page="4"]').click();
+    await vi.page.waitForFunction(() => document.querySelector('#reader-progress').textContent === '5 / 6');
+    await verifyPage();
+    const pageFive = await vi.page.locator('#comic-subline').innerText();
+    assert.match(pageFive, /suốt (?:một thời gian dài|lâu)/i, 'Vietnamese duration reads naturally on page 5');
+    await vi.page.screenshot({ path: path.join(screenshotDir, 'task-22-vi-p5.png'), fullPage: true });
+    await vi.page.locator('#reader-dots [data-page="5"]').click();
+    await vi.page.waitForFunction(() => document.querySelector('#reader-progress').textContent === '6 / 6');
+    await verifyPage();
+    assert.equal(await vi.page.locator('.story-keepsake').count(), 1, 'Vietnamese keepsake card is rendered');
+    assert.ok(await vi.page.locator('.story-keepsake').isVisible(), 'Vietnamese keepsake card is visible');
+    await vi.page.screenshot({ path: path.join(screenshotDir, 'task-22-vi-p6.png'), fullPage: true });
+    assert.deepEqual(vi.errors, []);
+    await vi.context.close();
+  } else if (process.argv.includes('--task21-only')) {
     await mkdir(screenshotDir, { recursive: true });
     const zh = await openScenario({ locale: 'zh', state: 'saved', viewport: { width: 390, height: 750 } });
     await completeReading(zh.page, { theme: 'love', state: 2, concern: 1, duration: 3, hour: 13, minute: 30 });
@@ -244,18 +278,13 @@ try {
     assert.deepEqual(en.errors, []);
     await en.context.close();
 
-    for (const locale of ['vi','th','km']) {
+    for (const locale of ['th','km']) {
       const baseline = await openScenario({ locale, state: 'saved', viewport: { width: 390, height: 750 }, source: 'baseline.html' });
       await completeReading(baseline.page, { theme: 'love', state: 2, concern: 1, duration: 3, hour: 13, minute: 30 });
       const expected = await storyPages(baseline.page);
       const legacy = await openScenario({ locale, state: 'saved', viewport: { width: 390, height: 750 } });
       await completeReading(legacy.page, { theme: 'love', state: 2, concern: 1, duration: 3, hour: 13, minute: 30 });
-      const actual = await storyPages(legacy.page, async (index, page) => {
-        if (locale === 'vi' && index === 4) {
-          assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), 0, 'Vietnamese legacy page 5 has no horizontal overflow at 390px');
-          await page.screenshot({ path: path.join(screenshotDir, 'task-21-vi-legacy-p5.png'), fullPage: true });
-        }
-      });
+      const actual = await storyPages(legacy.page);
       assert.deepEqual(actual, expected, `${locale} six-page title, body, and typography match main 01d8211`);
       assert.deepEqual(baseline.errors, []);
       assert.deepEqual(legacy.errors, []);
