@@ -6,6 +6,23 @@ const html = await readFile(new URL('../haku.html', import.meta.url), 'utf8');
 const declaration = html.match(/const STORY_COPY=\{zh:(\{[\s\S]*\})\};\s+STORY_COPY\.en=/);
 assert.ok(declaration, 'STORY_COPY declaration exists');
 const zh = JSON.parse(declaration[1]);
+const readLiteral = marker => {
+  const start = html.indexOf(marker);
+  const open = html.indexOf('{', start + marker.length);
+  assert.ok(start >= 0 && open >= 0, `${marker} literal exists`);
+  let depth = 0, quoted = false, escaped = false;
+  for (let i = open; i < html.length; i++) {
+    const char = html[i];
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '"') quoted = false;
+    } else if (char === '"') quoted = true;
+    else if (char === '{') depth++;
+    else if (char === '}' && --depth === 0) return JSON.parse(html.slice(open, i + 1));
+  }
+  assert.fail(`${marker} literal is incomplete`);
+};
 const buildLocale = name => {
   const start = html.indexOf(`function ${name}(zh)`);
   const end = html.indexOf('\n  const STORY_COPY={zh:', start);
@@ -14,12 +31,12 @@ const buildLocale = name => {
 };
 const STORY_COPY = {
   zh,
-  en: buildLocale('buildEnglishStoryCopy'),
+  en: readLiteral('STORY_COPY.en='),
   vi: buildLocale('buildVietnameseStoryCopy'),
   th: buildLocale('buildThaiStoryCopy'),
   km: buildLocale('buildKhmerStoryCopy')
 };
-for (const lang of ['en','vi','th','km']) assert.match(html, new RegExp(`STORY_COPY\\.${lang}=build`), `${lang} is registered in STORY_COPY`);
+for (const lang of ['en','vi','th','km']) assert.match(html, new RegExp(`STORY_COPY\\.${lang}=`), `${lang} is registered in STORY_COPY`);
 const shape = value => Array.isArray(value) ? [...value].map(shape) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, shape(value[key])])) : typeof value;
 const stringCount = value => typeof value === 'string' ? 1 : Array.isArray(value) ? value.reduce((count, item) => count + stringCount(item), 0) : value && typeof value === 'object' ? Object.values(value).reduce((count, item) => count + stringCount(item), 0) : 0;
 const placeholders = /\{(?!(?:duration|a|b|elements|action|heart)\})[^}]+\}/;
