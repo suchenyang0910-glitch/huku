@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
-import vm from 'node:vm';
 
 const html = await readFile(new URL('../haku.html', import.meta.url), 'utf8');
 const declaration = html.match(/const STORY_COPY=\{zh:(\{[\s\S]*\})\};\s+STORY_COPY\.en=/);
@@ -23,20 +23,13 @@ const readLiteral = marker => {
   }
   assert.fail(`${marker} literal is incomplete`);
 };
-const buildLocale = name => {
-  const start = html.indexOf(`function ${name}(zh)`);
-  const end = html.indexOf('\n  const STORY_COPY={zh:', start);
-  assert.ok(start >= 0 && end > start, `${name} builder exists`);
-  return vm.runInNewContext(html.slice(start, end) + `; ${name}`)(zh);
-};
 const STORY_COPY = {
   zh,
-  en: readLiteral('STORY_COPY.en='),
-  vi: buildLocale('buildVietnameseStoryCopy'),
-  th: buildLocale('buildThaiStoryCopy'),
-  km: buildLocale('buildKhmerStoryCopy')
+  en: readLiteral('STORY_COPY.en=')
 };
-for (const lang of ['en','vi','th','km']) assert.match(html, new RegExp(`STORY_COPY\\.${lang}=`), `${lang} is registered in STORY_COPY`);
+assert.deepEqual(Object.keys(STORY_COPY).sort(), ['en','zh']);
+assert.doesNotMatch(html, /build(?:English|Vietnamese|Thai|Khmer)StoryCopy/);
+assert.doesNotMatch(html, /STORY_COPY\.(?:vi|th|km)\s*=/);
 const shape = value => Array.isArray(value) ? [...value].map(shape) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, shape(value[key])])) : typeof value;
 const stringCount = value => typeof value === 'string' ? 1 : Array.isArray(value) ? value.reduce((count, item) => count + stringCount(item), 0) : value && typeof value === 'object' ? Object.values(value).reduce((count, item) => count + stringCount(item), 0) : 0;
 const placeholders = /\{(?!(?:duration|a|b|elements|action|heart)\})[^}]+\}/;
@@ -58,6 +51,18 @@ assert.doesNotMatch(zhText, /一定会|注定|命中|必然|复合|发财|升职
 const enText = JSON.stringify(STORY_COPY.en);
 assert.doesNotMatch(enText, /will definitely|destined|\bfate\b|get back together|get rich|\binvest\b/i, 'English story avoids prohibited predictions and advice');
 
+const elements = ['wood','fire','earth','metal','water'];
+const uniqueStoryParts = (copy, page) => Object.values(copy.themes).flatMap(theme => {
+  if (page === 'p4') return Object.entries(theme.p4).filter(([key]) => key !== 'title').flatMap(([, state]) => elements.map(element => state[element]));
+  return Object.entries(theme.p5).filter(([key]) => key !== 'title').flatMap(([, concern]) => elements.map(element => page === 'p5' ? concern[element].text : concern[element].keepsake));
+});
+for (const lang of Object.keys(STORY_COPY)) for (const page of ['p4','p5','keepsake']) {
+  const strings = uniqueStoryParts(STORY_COPY[lang], page);
+  const chineseCount = new Set(uniqueStoryParts(zh, page)).size;
+  assert.equal(strings.length, 80, `${lang} ${page} has 80 copy entries`);
+  assert.equal(new Set(strings).size, chineseCount, `${lang} ${page} retains the Chinese level of distinct copy`);
+}
+
 const render = html.slice(html.indexOf('  function renderManga(){'), html.indexOf('\n  function changeMangaPage(', html.indexOf('  function renderManga(){')));
 const pageTwo = render.slice(render.indexOf('else if(pageIndex===1){'), render.indexOf('else if(pageIndex===2){'));
 const pageThree = render.slice(render.indexOf('else if(pageIndex===2){'), render.indexOf('else if(pageIndex===3){'));
@@ -67,6 +72,20 @@ assert.match(pageThree, /max.length===2\?paras\(p.maxPair/, 'page 3 selects the 
 const pairCopy = STORY_COPY.en.common.p3;
 const pairLabel = pairCopy.elementPair.replace('{a}', 'Fire').replace('{b}', 'Metal');
 assert.match(pairCopy.maxPair.replace('{elements}', pairLabel), /Fire and Metal.*equally/i, 'fire and metal ties use the paired English narrative');
+
+const baseline = execFileSync('git', ['show','01d8211:haku.html'], { encoding: 'utf8' });
+const fallbackBranch = source => {
+  const start = source.indexOf('function renderManga(){');
+  const end = source.indexOf('\n  function changeMangaPage(', start);
+  const render = source.slice(start, end);
+  const branchStart = source === html ? render.indexOf('    }else{\n    if(pageIndex===0){') + '    }else{\n'.length : render.indexOf('    if(pageIndex===0){');
+  const branchEnd = source === html
+    ? render.indexOf('    }\n    $("#comic-line").textContent=', branchStart)
+    : render.indexOf('    $("#comic-line").textContent=', branchStart);
+  assert.ok(start >= 0 && end > start && branchStart >= 0 && branchEnd > branchStart, 'render branches are present');
+  return render.slice(branchStart, branchEnd).replace(/\r\n/g, '\n').trimEnd();
+};
+assert.equal(fallbackBranch(html), fallbackBranch(baseline), 'legacy story rendering branch is byte-for-byte the main implementation');
 
 const len = text => [...text].length;
 const words = text => text.trim().split(/\s+/).filter(Boolean).length;
@@ -93,4 +112,4 @@ for (const [themeKey, zhTheme] of Object.entries(zh.themes)) {
     const zhP6=zh.common.p6.opener+zhLantern+zh.common.p6.keepsakeLabel+zhKeepsake+zhTheme.p6.reflection,zhP6Count=len(zhP6);assert.ok(zhP6Count<=160, `zh P6 <=160 (${combo}: ${zhP6Count})`);record('zh','P6',zhP6Count,'chars',combo);
   }
 }
-console.log(`story-copy.test.mjs: 5 locale schemas (${JSON.stringify(Object.fromEntries(Object.entries(STORY_COPY).map(([lang, copy]) => [lang, stringCount(copy)])))} strings each), policy, rendering regression, and length checks passed; longest=${JSON.stringify([...longest.values()].sort((a,b)=>b.length-a.length).slice(0,3))}`);
+console.log(`story-copy.test.mjs: ${Object.keys(STORY_COPY).length} locale schemas (${JSON.stringify(Object.fromEntries(Object.entries(STORY_COPY).map(([lang, copy]) => [lang, stringCount(copy)])))} strings each), policy, rendering regression, and length checks passed; longest=${JSON.stringify([...longest.values()].sort((a,b)=>b.length-a.length).slice(0,3))}`);
