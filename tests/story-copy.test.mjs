@@ -48,5 +48,6 @@ const checkStrings = value => {
   else if (value && typeof value === 'object') Object.values(value).forEach(checkStrings);
 };
 checkStrings(en);
+assert.doesNotMatch(JSON.stringify(en), /undefined/, 'English story has no missing template values');
 assert.doesNotMatch(JSON.stringify(en), /will definitely|destined|\bfate\b|get back together|get rich|\binvest\b/i, 'English story avoids prohibited promises');
 console.log('story-copy.test.mjs: English locale structure and copy checks passed.');
