@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdir, readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
@@ -14,18 +13,12 @@ try {
 
 const root = path.resolve(import.meta.dirname, '..');
 const screenshotDir = process.env.HAKU_SCREENSHOT_DIR ? path.resolve(process.env.HAKU_SCREENSHOT_DIR) : path.join(root, 'docs', 'screenshots');
-const baselineHtml = execFileSync('git', ['show', '01d8211:haku.html'], { encoding: 'utf8' });
 const contentTypes = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.webp': 'image/webp', '.png': 'image/png', '.svg': 'image/svg+xml' };
 const server = createServer(async (request, response) => {
   try {
     const pathname = new URL(request.url, 'http://mini.localhost').pathname;
     const relative = pathname === '/' ? 'haku.html' : pathname.startsWith('/assets/') ? `public${pathname}` : pathname.slice(1);
-    if (relative !== 'haku.html' && relative !== 'baseline.html' && !relative.startsWith('public/assets/')) throw new Error('not found');
-    if (relative === 'baseline.html') {
-      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      response.end(baselineHtml);
-      return;
-    }
+    if (relative !== 'haku.html' && !relative.startsWith('public/assets/')) throw new Error('not found');
     const file = path.resolve(root, relative);
     if (!file.startsWith(root + path.sep)) throw new Error('not found');
     const body = await readFile(file);
@@ -167,28 +160,33 @@ async function completeReading(page, { gender = 'male', unknownTime = false, the
   await page.waitForFunction(() => window.__hakuTest.profilePuts === 1);
 }
 
-async function storyPages(page, onPage) {
-  await page.waitForFunction(() => document.querySelectorAll('#reader-dots [data-page]').length === 6);
-  const pages = [];
-  for (let index = 0; index < 6; index++) {
-    await page.waitForFunction(expected => document.querySelector('#reader-progress').textContent === `${expected + 1} / 6`, index);
-    pages.push(await page.evaluate(() => ({
-      title: document.querySelector('#comic-line').textContent,
-      body: document.querySelector('#comic-subline').innerText,
-      style: {
-        subline: getComputedStyle(document.querySelector('#comic-subline')).font,
-        copy: getComputedStyle(document.querySelector('#comic-subline .story-copy') || document.querySelector('#comic-subline')).font,
-        note: document.querySelector('#comic-subline .pillar-note') ? getComputedStyle(document.querySelector('#comic-subline .pillar-note')).font : null
-      }
-    })));
-    await onPage?.(index, page);
-    if (index < 5) await page.locator(`#reader-dots [data-page="${index + 1}"]`).click();
-  }
-  return pages;
-}
-
 try {
-  if (process.argv.includes('--task22-th-only')) {
+  if (process.argv.includes('--task22-km-only')) {
+    await mkdir(screenshotDir, { recursive: true });
+    const km = await openScenario({ locale: 'km', state: 'saved', viewport: { width: 390, height: 750 } });
+    await completeReading(km.page, { theme: 'love', state: 2, concern: 1, duration: 3, hour: 13, minute: 30 });
+    const profile = await km.page.evaluate(() => JSON.parse(localStorage.getItem('__hakuFakeProfile')));
+    assert.equal(profile.birth_date, '1990-05-15'); assert.equal(profile.birth_time, '13:30'); assert.equal(profile.place, 'cn');
+    const waitForIllustration = async pageNumber => {
+      await km.page.waitForFunction(expected => { const image = document.querySelector('#story-illustration'); return document.querySelector('#reading-flow').dataset.scene === String(expected) && image.classList.contains('is-loaded') && image.naturalWidth > 0; }, pageNumber);
+      await km.page.waitForFunction(() => Number(getComputedStyle(document.querySelector('#story-illustration')).opacity) >= 0.99);
+    };
+    const verifyKhmerLayout = async () => {
+      const result = await km.page.evaluate(() => {
+        const root = document.documentElement, blocks = [...document.querySelectorAll('#comic-subline .story-copy')], segmenter = new Intl.Segmenter('km', { granularity: 'word' }), splitWords = [], clipped = [];
+        for (const block of blocks) { const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT); let node; while ((node = walker.nextNode())) for (const part of segmenter.segment(node.data)) { if (!part.isWordLike) continue; const range = document.createRange(); range.setStart(node, part.index); range.setEnd(node, part.index + part.segment.length); if (range.getClientRects().length > 1) splitWords.push(part.segment); } const box = block.getBoundingClientRect(), style = getComputedStyle(block); if (block.scrollHeight > block.clientHeight + 1 || box.height <= 0) clipped.push({text:block.textContent,scroll:block.scrollHeight,client:block.clientHeight,box:box.height,lineHeight:style.lineHeight,fontSize:style.fontSize}); }
+        return { overflow: root.scrollWidth - innerWidth, text: document.querySelector('#comic-subline').innerText, splitWords, clipped };
+      });
+      assert.equal(result.overflow, 0, 'Khmer story has no horizontal overflow at 390px'); assert.match(result.text, /[\u1780-\u17FF]/, 'Khmer story text is present'); assert.deepEqual(result.splitWords, [], 'Khmer words are not split across lines'); assert.deepEqual(result.clipped, [], 'Khmer text has sufficient line boxes for stacked marks: ' + JSON.stringify(result.clipped));
+    };
+    await km.page.waitForFunction(() => document.querySelector('#reader-progress').textContent === '1 / 6'); await waitForIllustration(1); await verifyKhmerLayout();
+    await km.page.screenshot({ path: path.join(screenshotDir, 'task-22-km-p1.png'), fullPage: true });
+    await km.page.locator('#reader-dots [data-page="4"]').click(); await km.page.waitForFunction(() => document.querySelector('#reader-progress').textContent === '5 / 6'); await waitForIllustration(5); await verifyKhmerLayout();
+    await km.page.screenshot({ path: path.join(screenshotDir, 'task-22-km-p5.png'), fullPage: true });
+    await km.page.locator('#reader-dots [data-page="5"]').click(); await km.page.waitForFunction(() => document.querySelector('#reader-progress').textContent === '6 / 6'); await waitForIllustration(6); await verifyKhmerLayout();
+    assert.equal(await km.page.locator('.story-keepsake').count(), 1); assert.ok(await km.page.locator('.story-keepsake').isVisible());
+    await km.page.screenshot({ path: path.join(screenshotDir, 'task-22-km-p6.png'), fullPage: true }); assert.deepEqual(km.errors, []); await km.context.close();
+  } else if (process.argv.includes('--task22-th-only')) {
     await mkdir(screenshotDir, { recursive: true });
     const th = await openScenario({ locale: 'th', state: 'saved', viewport: { width: 390, height: 750 } });
     await completeReading(th.page, { theme: 'love', state: 2, concern: 1, duration: 3, hour: 13, minute: 30 });
@@ -321,19 +319,6 @@ try {
     assert.deepEqual(en.errors, []);
     await en.context.close();
 
-    for (const locale of ['km']) {
-      const baseline = await openScenario({ locale, state: 'saved', viewport: { width: 390, height: 750 }, source: 'baseline.html' });
-      await completeReading(baseline.page, { theme: 'love', state: 2, concern: 1, duration: 3, hour: 13, minute: 30 });
-      const expected = await storyPages(baseline.page);
-      const legacy = await openScenario({ locale, state: 'saved', viewport: { width: 390, height: 750 } });
-      await completeReading(legacy.page, { theme: 'love', state: 2, concern: 1, duration: 3, hour: 13, minute: 30 });
-      const actual = await storyPages(legacy.page);
-      assert.deepEqual(actual, expected, `${locale} six-page title, body, and typography match main 01d8211`);
-      assert.deepEqual(baseline.errors, []);
-      assert.deepEqual(legacy.errors, []);
-      await baseline.context.close();
-      await legacy.context.close();
-    }
   } else {
   for (const viewport of viewports) {
     for (const locale of locales) {

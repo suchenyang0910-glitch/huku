@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 
 const html = (await readFile(new URL('../haku.html', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
@@ -27,12 +26,13 @@ const STORY_COPY = {
   zh,
   en: readLiteral('STORY_COPY.en='),
   vi: readLiteral('STORY_COPY.vi='),
-  th: readLiteral('STORY_COPY.th=')
+  th: readLiteral('STORY_COPY.th='),
+  km: readLiteral('STORY_COPY.km=')
 };
-assert.deepEqual(Object.keys(STORY_COPY).sort(), ['en','th','vi','zh']);
+assert.deepEqual(Object.keys(STORY_COPY).sort(), ['en','km','th','vi','zh']);
+assert.deepEqual([...html.matchAll(/\bSTORY_COPY\.([a-z]{2})=/g)].map(match => match[1]).sort(), ['en','km','th','vi'], 'STORY_COPY registers exactly the five supported locales');
 assert.doesNotMatch(html, /build(?:English|Vietnamese|Thai|Khmer)StoryCopy/);
-assert.doesNotMatch(html, /STORY_COPY\.km\s*=/);
-assert.doesNotMatch(html, /STORY_COPY_(?:VI|TH)_DRAFT/);
+assert.doesNotMatch(html, /STORY_COPY_(?:VI|TH|KM)_DRAFT/);
 const shape = value => Array.isArray(value) ? [...value].map(shape) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, shape(value[key])])) : typeof value;
 const stringCount = value => typeof value === 'string' ? 1 : Array.isArray(value) ? value.reduce((count, item) => count + stringCount(item), 0) : value && typeof value === 'object' ? Object.values(value).reduce((count, item) => count + stringCount(item), 0) : 0;
 const placeholders = /\{(?!(?:duration|a|b|elements|action|heart)\})[^}]+\}/;
@@ -66,6 +66,9 @@ assert.doesNotMatch(viText, /chắc chắn sẽ|định mệnh|số phận đã 
 const thText = JSON.stringify(STORY_COPY.th).replaceAll('ภูเขา','').replaceAll('เนินเขา','').replaceAll('หุบเขา','').replaceAll('สันเขา','');
 assert.doesNotMatch(thText, /แน่นอนว่าจะ|พรหมลิขิต|ชะตากรรม|โชคชะตากำหนด|กลับมาคืนดี|รวย|ลงทุน|เขา|เธอ/, 'Thai story avoids deterministic language, financial advice, and gendered pronouns');
 
+const kmText = JSON.stringify(STORY_COPY.km);
+assert.doesNotMatch(kmText, /ប្រាកដជានឹង|វាសនា|ព្រហ្មលិខិត|ត្រឡប់មកជាមួយគ្នាវិញ|ក្លាយជាអ្នកមាន|វិនិយោគ|នាង|គាត់/, 'Khmer story avoids deterministic language, financial advice, and gendered pronouns');
+
 const elements = ['wood','fire','earth','metal','water'];
 const uniqueStoryParts = (copy, page) => Object.values(copy.themes).flatMap(theme => {
   if (page === 'p4') return Object.entries(theme.p4).filter(([key]) => key !== 'title').flatMap(([, state]) => elements.map(element => state[element]));
@@ -79,6 +82,7 @@ for (const lang of Object.keys(STORY_COPY)) for (const page of ['p4','p5','keeps
 }
 
 const render = html.slice(html.indexOf('  function renderManga(){'), html.indexOf('\n  function changeMangaPage(', html.indexOf('  function renderManga(){')));
+assert.doesNotMatch(render, /if\s*\(local\)|copy\.(?:pillarTitle|masterTitle|personality|durationNotes|weeklyActions|weeklyTimingDependent|weeklyTitle)|theme\.(?:page4Title|page5Title|closing)/, 'all locales use the new story renderer without the legacy branch');
 const pageTwo = render.slice(render.indexOf('else if(pageIndex===1){'), render.indexOf('else if(pageIndex===2){'));
 const pageThree = render.slice(render.indexOf('else if(pageIndex===2){'), render.indexOf('else if(pageIndex===3){'));
 assert.equal((pageTwo.match(/ziweiStoryLine\('soul'\)/g) || []).length, 1, 'story page 2 renders the Zi Wei soul line once');
@@ -87,20 +91,6 @@ assert.match(pageThree, /max.length===2\?paras\(p.maxPair/, 'page 3 selects the 
 const pairCopy = STORY_COPY.en.common.p3;
 const pairLabel = pairCopy.elementPair.replace('{a}', 'Fire').replace('{b}', 'Metal');
 assert.match(pairCopy.maxPair.replace('{elements}', pairLabel), /Fire and Metal.*equally/i, 'fire and metal ties use the paired English narrative');
-
-const baseline = execFileSync('git', ['show','01d8211:haku.html'], { encoding: 'utf8' }).replace(/\r\n/g, '\n');
-const fallbackBranch = source => {
-  const start = source.indexOf('function renderManga(){');
-  const end = source.indexOf('\n  function changeMangaPage(', start);
-  const render = source.slice(start, end);
-  const branchStart = source === html ? render.indexOf('    }else{\n    if(pageIndex===0){') + '    }else{\n'.length : render.indexOf('    if(pageIndex===0){');
-  const branchEnd = source === html
-    ? render.indexOf('    }\n    $("#comic-line").textContent=', branchStart)
-    : render.indexOf('    $("#comic-line").textContent=', branchStart);
-  assert.ok(start >= 0 && end > start && branchStart >= 0 && branchEnd > branchStart, 'render branches are present');
-  return render.slice(branchStart, branchEnd).replace(/\r\n/g, '\n').trimEnd();
-};
-assert.equal(fallbackBranch(html), fallbackBranch(baseline), 'legacy story rendering branch is byte-for-byte the main implementation');
 
 const len = text => [...text].length;
 const words = text => text.trim().split(/\s+/).filter(Boolean).length;
