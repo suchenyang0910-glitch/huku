@@ -61,3 +61,12 @@ const vi = buildVietnamese(zh);
 assert.deepEqual(shape(vi), shape(zh), 'Vietnamese story keys match Chinese exactly');
 checkStrings(vi);
 
+
+const thStart = html.indexOf('function buildThaiStoryCopy(zh)');
+const thEnd = html.indexOf('\n  const STORY_COPY={zh:', thStart);
+assert.ok(thStart >= 0 && thEnd > thStart, 'Thai copy builder exists');
+const buildThai = vm.runInNewContext(html.slice(thStart, thEnd) + '; buildThaiStoryCopy');
+const th = buildThai(zh);
+assert.deepEqual(shape(th), shape(zh), 'Thai story keys match Chinese exactly');
+checkStrings(th);
+assert.doesNotMatch(JSON.stringify(th), /undefined|分钟/, 'Thai story has no missing values or foreign minute unit');
