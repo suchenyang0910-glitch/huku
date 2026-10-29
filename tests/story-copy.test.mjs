@@ -21,6 +21,7 @@ const STORY_COPY = {
 };
 for (const lang of ['en','vi','th','km']) assert.match(html, new RegExp(`STORY_COPY\\.${lang}=build`), `${lang} is registered in STORY_COPY`);
 const shape = value => Array.isArray(value) ? [...value].map(shape) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, shape(value[key])])) : typeof value;
+const stringCount = value => typeof value === 'string' ? 1 : Array.isArray(value) ? value.reduce((count, item) => count + stringCount(item), 0) : value && typeof value === 'object' ? Object.values(value).reduce((count, item) => count + stringCount(item), 0) : 0;
 const placeholders = /\{(?!(?:duration|a|b|elements|action|heart)\})[^}]+\}/;
 const checkStrings = value => {
   if (typeof value === 'string') {
@@ -75,4 +76,4 @@ for (const [themeKey, zhTheme] of Object.entries(zh.themes)) {
     const zhP6=zh.common.p6.opener+zhLantern+zh.common.p6.keepsakeLabel+zhKeepsake+zhTheme.p6.reflection,zhP6Count=len(zhP6);assert.ok(zhP6Count<=160, `zh P6 <=160 (${combo}: ${zhP6Count})`);record('zh','P6',zhP6Count,'chars',combo);
   }
 }
-console.log(`story-copy.test.mjs: 5 locale schemas, policy, rendering regression, and length checks passed; longest=${JSON.stringify([...longest.values()].sort((a,b)=>b.length-a.length).slice(0,3))}`);
+console.log(`story-copy.test.mjs: 5 locale schemas (${Object.fromEntries(Object.entries(STORY_COPY).map(([lang, copy]) => [lang, stringCount(copy)]))} strings each), policy, rendering regression, and length checks passed; longest=${JSON.stringify([...longest.values()].sort((a,b)=>b.length-a.length).slice(0,3))}`);
