@@ -178,6 +178,10 @@ try {
         await zh.page.locator('.story-details summary').click();
       }
       if (page === 5) await zh.page.screenshot({ path: path.join(screenshotDir, 'task-21-zh-keepsake-light.png'), fullPage: true });
+      if (page === 4) {
+        const size = await zh.page.evaluate(() => ({ story: parseFloat(getComputedStyle(document.querySelector('#comic-subline .story-copy')).fontSize), main: parseFloat(getComputedStyle(document.querySelector('#comic-subline')).fontSize) }));
+        assert.ok(size.story >= size.main, 'Chinese page 5 copy is at least as large as the main story text');
+      }
       await zh.page.screenshot({ path: path.join(screenshotDir, `task-21-zh-light-p${page + 1}.png`), fullPage: true });
       if (page < 5) await zh.page.locator(`#reader-dots [data-page="${page + 1}"]`).click();
     }
@@ -204,6 +208,10 @@ try {
         assert.match(p3, /Fire and Metal.*equally/i, 'English page 3 uses tied-element narrative');
       }
       if (page + 1 === 6) await en.page.screenshot({ path: path.join(screenshotDir, 'task-21-en-keepsake-dark.png'), fullPage: true });
+      if (page + 1 === 5) {
+        const size = await en.page.evaluate(() => ({ story: parseFloat(getComputedStyle(document.querySelector('#comic-subline .story-copy')).fontSize), main: parseFloat(getComputedStyle(document.querySelector('#comic-subline')).fontSize) }));
+        assert.ok(size.story >= size.main, 'English page 5 copy is at least as large as the main story text');
+      }
       await en.page.screenshot({ path: path.join(screenshotDir, `task-21-en-dark-p${page + 1}.png`), fullPage: true });
     }
     assert.deepEqual(en.errors, []);
